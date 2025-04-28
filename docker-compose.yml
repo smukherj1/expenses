@@ -1,0 +1,13 @@
+services:
+  adminer:
+    image: adminer
+    restart: always
+    ports:
+      - 8080:8080
+  db:
+    image: pgvector/pgvector:0.8.0-pg17
+    restart: always
+    environment:
+      POSTGRES_PASSWORD: password
+    volumes:
+      - "./data/pg:/var/lib/postgresql/data"
