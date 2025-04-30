@@ -3,10 +3,11 @@ FROM golang:latest AS builder
 WORKDIR /app
 
 # Download Go modules
-COPY go.mod ./
+COPY go.mod go.sum ./
 RUN go mod download
 
 COPY bin ./bin
+COPY pkg ./pkg
 
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
     go build -a -installsuffix netgo -ldflags="-s -w" \
