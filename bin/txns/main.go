@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -58,15 +59,35 @@ func (s *txnsServer) post(w http.ResponseWriter, r *http.Request) {
 		respondf(w, http.StatusBadRequest, "invalid description, got length %v, want 0 < length <= 100", len(tx.Description))
 		return
 	}
-	a, err := strconv.ParseInt(tx.Amount, 10, 64)
+	splitAmount := strings.Split(tx.Amount, ".")
+	var dollars, cents string
+	if len(splitAmount) == 1 {
+		dollars = splitAmount[0]
+		cents = "0"
+	} else if len(splitAmount) == 2 {
+		dollars, cents = splitAmount[0], splitAmount[1]
+	} else {
+		respondf(w, http.StatusBadRequest, "invalid amount %q, want <dollars>.<cents>", tx.Amount)
+		return
+	}
+	d, err := strconv.ParseInt(dollars, 10, 64)
 	if err != nil {
-		respondf(w, http.StatusBadRequest, "invalid amount %q, expected base 10 64-bit integer: %v", a, err)
+		respondf(w, http.StatusBadRequest, "invalid dollar portion %q in amount %q, expected base 10 64-bit integer: %v", dollars, tx.Amount, err)
+		return
+	}
+	c, err := strconv.ParseInt(cents, 10, 64)
+	if err != nil {
+		respondf(w, http.StatusBadRequest, "invalid cents portion %q in amount %q, expected base 10 64-bit integer: %v", cents, tx.Amount, err)
+		return
+	}
+	if c > 100 {
+		respondf(w, http.StatusBadRequest, "invalid cents portion %q in amount %q, must be < 100", cents, tx.Amount)
 		return
 	}
 	tid, err := s.db.CreateTxn(r.Context(), &storage.Txn{
 		Date:        t,
 		Description: tx.Description,
-		AmountCents: a,
+		AmountCents: d*100 + c,
 	})
 	if err != nil {
 		log.Printf("Error creating transaction: %v", err)
@@ -97,7 +118,6 @@ func main() {
 	r.Use(middleware.Timeout(60 * time.Second))
 
 	r.Route("/txns", func(r chi.Router) {
-		r.Get("/{id}", ts.get)
 		r.Get("/", ts.get)
 		r.Post("/", ts.post)
 	})
