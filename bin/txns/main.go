@@ -20,9 +20,11 @@ type txnsServer struct {
 }
 
 type txn struct {
-	Date        string `json:"date"`
-	Description string `json:"description"`
-	Amount      string `json:"amount"`
+	Date          string    `json:"date"`
+	Description   string    `json:"description"`
+	Amount        string    `json:"amount"`
+	Source        string    `json:"source"`
+	DescEmbedding []float32 `json:"desc_embedding"`
 }
 
 type postTxnsResp struct {
@@ -59,6 +61,10 @@ func (s *txnsServer) post(w http.ResponseWriter, r *http.Request) {
 		respondf(w, http.StatusBadRequest, "invalid description, got length %v, want 0 < length <= 100", len(tx.Description))
 		return
 	}
+	if len(tx.Source) == 0 || len(tx.Source) > 100 {
+		respondf(w, http.StatusBadRequest, "invalid source, got length %v, want 0 < length <= 100", len(tx.Source))
+		return
+	}
 	splitAmount := strings.Split(tx.Amount, ".")
 	var dollars, cents string
 	if len(splitAmount) == 1 {
@@ -84,10 +90,21 @@ func (s *txnsServer) post(w http.ResponseWriter, r *http.Request) {
 		respondf(w, http.StatusBadRequest, "invalid cents portion %q in amount %q, must be < 100", cents, tx.Amount)
 		return
 	}
+	if len(tx.DescEmbedding) != 768 {
+		respondf(w, http.StatusBadRequest, "invalid embedding, got vector of length %v, want 768", len(tx.DescEmbedding))
+		return
+	}
+	embeddingJSON, err := json.Marshal(tx.DescEmbedding)
+	if err != nil {
+		respondf(w, http.StatusInternalServerError, "unable to transform embedding vector into a JSON list: %v", err)
+		return
+	}
 	tid, err := s.db.CreateTxn(r.Context(), &storage.Txn{
-		Date:        t,
-		Description: tx.Description,
-		AmountCents: d*100 + c,
+		Date:          t,
+		Description:   tx.Description,
+		AmountCents:   d*100 + c,
+		Source:        tx.Source,
+		DescEmbedding: string(embeddingJSON),
 	})
 	if err != nil {
 		log.Printf("Error creating transaction: %v", err)
