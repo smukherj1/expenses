@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -42,4 +43,17 @@ VALUES ($1, $2, $3, $4, $5) RETURNING ID
 		return 0, fmt.Errorf("error creating transaction: %w", err)
 	}
 	return id, nil
+}
+
+func (s *Storage) GetByID(ctx context.Context, id int64) (*Txn, error) {
+	q := `SELECT DATE, DESCRIPTION, AMOUNT_CENTS, SOURCE
+FROM TRANSACTIONS WHERE ID = $1
+`
+	result := &Txn{}
+	if err := s.db.QueryRowContext(ctx, q, id).Scan(&result.Date, &result.Description, &result.AmountCents, &result.Source); errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	} else if err != nil {
+		return nil, fmt.Errorf("error fetching transaction with ID %v: %w", id, err)
+	}
+	return result, nil
 }

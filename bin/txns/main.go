@@ -15,16 +15,29 @@ import (
 	"github.com/smukherj1/expenses/pkg/storage"
 )
 
+const (
+	dateFmt = "2006/01/02"
+)
+
 type txnsServer struct {
 	db *storage.Storage
 }
 
 type txn struct {
-	Date          string    `json:"date"`
-	Description   string    `json:"description"`
-	Amount        string    `json:"amount"`
-	Source        string    `json:"source"`
-	DescEmbedding []float32 `json:"desc_embedding"`
+	ID            string    `json:"id,omitempty"`
+	Date          string    `json:"date,omitempty"`
+	Description   string    `json:"description,omitempty"`
+	Amount        string    `json:"amount,omitempty"`
+	Source        string    `json:"source,omitempty"`
+	DescEmbedding []float32 `json:"desc_embedding,omitempty"`
+}
+
+type txnQuery struct {
+	ID          string
+	Date        string
+	Description string
+	Amount      string
+	Source      string
 }
 
 type postTxnsResp struct {
@@ -52,7 +65,11 @@ func (s *txnsServer) post(w http.ResponseWriter, r *http.Request) {
 		respondf(w, http.StatusBadRequest, "error parsing body as a JSON transaction: %v", err)
 		return
 	}
-	t, err := time.Parse("2006/01/02", tx.Date)
+	if tx.ID != "" {
+		respondf(w, http.StatusBadRequest, "ID can't be specified when creating a new transaction, got ID %q, want blank", tx.ID)
+		return
+	}
+	t, err := time.Parse(dateFmt, tx.Date)
 	if err != nil {
 		respondf(w, http.StatusBadRequest, "invalid date %q, want format yyyy/mm/dd", tx.Date)
 		return
@@ -107,8 +124,7 @@ func (s *txnsServer) post(w http.ResponseWriter, r *http.Request) {
 		DescEmbedding: string(embeddingJSON),
 	})
 	if err != nil {
-		log.Printf("Error creating transaction: %v", err)
-		respondf(w, http.StatusInternalServerError, "internal server error")
+		respondf(w, http.StatusInternalServerError, "error creating txn: %v", err)
 		return
 	}
 	respBody, err := json.Marshal(&postTxnsResp{ID: tid})
@@ -124,6 +140,41 @@ func (s *txnsServer) get(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(fmt.Sprintln("Ok")))
 }
 
+func (s *txnsServer) getByID(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		respondf(w, http.StatusBadRequest, "txn id missing in URL path")
+		return
+	}
+	txnID, err := strconv.ParseInt(id, 10, 64)
+	if err != nil {
+		respondf(w, http.StatusBadRequest, "id %q in path was not a valid 64-bit integer: %v", id, err)
+		return
+	}
+	t, err := s.db.GetByID(r.Context(), txnID)
+	if err != nil {
+		respondf(w, http.StatusInternalServerError, "error fetching txn: %v", err)
+		return
+	}
+	if t == nil {
+		respondf(w, http.StatusNotFound, "txn %v not found", txnID)
+		return
+	}
+	txn := txn{
+		ID:          fmt.Sprint(t.ID),
+		Date:        t.Date.Format(dateFmt),
+		Description: t.Description,
+		Amount:      fmt.Sprint(t.AmountCents),
+	}
+	resp, err := json.Marshal(&txn)
+	if err != nil {
+		respondf(w, http.StatusInternalServerError, "error generating JSON for response: %v", err)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(string(resp)))
+}
+
 func main() {
 	db, err := storage.New()
 	if err != nil {
@@ -136,6 +187,7 @@ func main() {
 
 	r.Route("/txns", func(r chi.Router) {
 		r.Get("/", ts.get)
+		r.Get("/{id}", ts.getByID)
 		r.Post("/", ts.post)
 	})
 	addr := ":3000"
