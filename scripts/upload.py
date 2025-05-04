@@ -17,7 +17,7 @@ def embedding(text: str) -> str:
                            "model": "nomic-embed-text",
                            "input": text,
                        })
-  return json.loads(resp.text).get("embeddings")[0]
+  return json.dumps(json.loads(resp.text).get("embeddings")[0])
 
 
 def rbc_chequing():

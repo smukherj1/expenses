@@ -24,12 +24,13 @@ type txnsServer struct {
 }
 
 type txn struct {
-	ID            string `json:"id,omitempty"`
-	Date          string `json:"date,omitempty"`
-	Description   string `json:"description,omitempty"`
-	Amount        string `json:"amount,omitempty"`
-	Source        string `json:"source,omitempty"`
-	DescEmbedding string `json:"desc_embedding,omitempty"`
+	ID            string   `json:"id,omitempty"`
+	Date          string   `json:"date,omitempty"`
+	Description   string   `json:"description,omitempty"`
+	Amount        string   `json:"amount,omitempty"`
+	Source        string   `json:"source,omitempty"`
+	Tags          []string `json:"tags,omitempty"`
+	DescEmbedding string   `json:"desc_embedding,omitempty"`
 }
 
 type postTxnsResp struct {
@@ -41,6 +42,7 @@ type validatedTxn struct {
 	description   string
 	amountCents   int64
 	source        string
+	tags          []string
 	descEmbedding string
 }
 
@@ -161,6 +163,15 @@ func validateTxn(tx *txn, vopts ...validateTxnOption) (*validatedTxn, int, error
 		}
 		result.descEmbedding = tx.DescEmbedding
 	}
+	if len(tx.Tags) > storage.MaxTags {
+		return nil, http.StatusBadRequest, fmt.Errorf("tags limit exceeded, got %v tags, want <= %v", len(tx.Tags), storage.MaxTags)
+	}
+	for i, t := range tx.Tags {
+		if len(t) == 0 || len(t) > storage.TagSizeLimit {
+			return nil, http.StatusBadRequest, fmt.Errorf("length of tag at index %v was invalid, got length %v, want <= %v", i, len(t), storage.TagSizeLimit)
+		}
+	}
+	result.tags = tx.Tags
 	return &result, http.StatusOK, nil
 }
 
@@ -179,7 +190,11 @@ func (s *txnsServer) post(w http.ResponseWriter, r *http.Request) {
 		respondf(w, http.StatusBadRequest, "ID can't be specified when creating a new transaction, got ID %q, want blank", tx.ID)
 		return
 	}
-	vtxn, code, err := validateTxn(&tx)
+	var vopts []validateTxnOption
+	if tx.DescEmbedding == "" {
+		vopts = append(vopts, skipDescEmbedding())
+	}
+	vtxn, code, err := validateTxn(&tx, vopts...)
 	if err != nil {
 		respondf(w, code, "invalid transaction: %v", err)
 	}
@@ -188,6 +203,7 @@ func (s *txnsServer) post(w http.ResponseWriter, r *http.Request) {
 		Description:   vtxn.description,
 		AmountCents:   vtxn.amountCents,
 		Source:        vtxn.source,
+		Tags:          vtxn.tags,
 		DescEmbedding: vtxn.descEmbedding,
 	})
 	if err != nil {
@@ -338,6 +354,7 @@ func (s *txnsServer) getByID(w http.ResponseWriter, r *http.Request) {
 		Date:        t.Date.Format(dateFmt),
 		Description: t.Description,
 		Amount:      fmt.Sprint(t.AmountCents),
+		Tags:        t.Tags,
 	}
 	resp, err := json.Marshal(&txn)
 	if err != nil {

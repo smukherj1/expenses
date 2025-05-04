@@ -9,15 +9,15 @@ import (
 	"strings"
 	"time"
 
-	_ "github.com/lib/pq"
+	"github.com/lib/pq"
 )
 
 const (
 	DescLimit    = 100
 	SourceLimit  = 100
 	DescEmbedLen = 768
-	TagsLimit    = 30
-	TagLenLimit  = 10
+	MaxTags      = 30
+	TagSizeLimit = 10
 	dateQueryFmt = "2006-01-02"
 )
 
@@ -32,6 +32,7 @@ type Txn struct {
 	Description   string
 	AmountCents   int64
 	Source        string
+	Tags          []string
 	DescEmbedding string
 }
 
@@ -44,6 +45,14 @@ func (tx *Txn) validate() error {
 	}
 	if l := len(tx.Source); l == 0 || l > SourceLimit {
 		return fmt.Errorf("invalid source length, got %v, want >0 and <= %v", l, SourceLimit)
+	}
+	if l := len(tx.Tags); l > MaxTags {
+		return fmt.Errorf("invalid number of tags, got %v, want <= %v", l, MaxTags)
+	}
+	for i, t := range tx.Tags {
+		if l := len(t); l == 0 || l > TagSizeLimit {
+			return fmt.Errorf("invalid tag at index %v, got size %v, want size > 0 and <= %v", i, l, TagSizeLimit)
+		}
 	}
 	return nil
 }
@@ -110,22 +119,28 @@ func (s *Storage) CreateTxn(ctx context.Context, t *Txn) (int64, error) {
 	if err := t.validate(); err != nil {
 		return 0, err
 	}
-	q := `INSERT INTO TRANSACTIONS (DATE, DESCRIPTION, AMOUNT_CENTS, SOURCE, DESC_EMBEDDING)
-VALUES ($1, $2, $3, $4, $5) RETURNING ID
+	q := `INSERT INTO TRANSACTIONS (DATE, DESCRIPTION, AMOUNT_CENTS, SOURCE, TAGS, DESC_EMBEDDING)
+VALUES ($1, $2, $3, $4, $5, $6) RETURNING ID
 `
 	var id int64
-	if err := s.db.QueryRowContext(ctx, q, t.Date, t.Description, t.AmountCents, t.Source, t.DescEmbedding).Scan(&id); err != nil {
+	if err := s.db.QueryRowContext(ctx, q, t.Date, t.Description, t.AmountCents, t.Source, pq.Array(t.Tags), t.DescEmbedding).Scan(&id); err != nil {
 		return 0, fmt.Errorf("error creating transaction: %w", err)
 	}
 	return id, nil
 }
 
 func (s *Storage) GetTxn(ctx context.Context, id int64) (*Txn, error) {
-	q := `SELECT DATE, DESCRIPTION, AMOUNT_CENTS, SOURCE
+	q := `SELECT DATE, DESCRIPTION, AMOUNT_CENTS, SOURCE, TAGS
 FROM TRANSACTIONS WHERE ID = $1
 `
 	result := &Txn{ID: id}
-	if err := s.db.QueryRowContext(ctx, q, id).Scan(&result.Date, &result.Description, &result.AmountCents, &result.Source); errors.Is(err, sql.ErrNoRows) {
+	if err := s.db.QueryRowContext(ctx, q, id).Scan(
+		&result.Date,
+		&result.Description,
+		&result.AmountCents,
+		&result.Source,
+		(*pq.StringArray)(&result.Tags),
+	); errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	} else if err != nil {
 		return nil, fmt.Errorf("error fetching transaction with ID %v: %w", id, err)
@@ -137,7 +152,7 @@ func (s *Storage) QueryTxn(ctx context.Context, tq *TxnQuery) ([]Txn, error) {
 	if err := tq.validate(); err != nil {
 		return nil, err
 	}
-	q := `SELECT ID, DATE, DESCRIPTION, AMOUNT_CENTS, SOURCE
+	q := `SELECT ID, DATE, DESCRIPTION, AMOUNT_CENTS, SOURCE, TAGS
 FROM TRANSACTIONS WHERE `
 	clauses := []string{fmt.Sprint("ID >= ", tq.StartID)}
 	if tq.FromDate != nil {
@@ -171,7 +186,14 @@ FROM TRANSACTIONS WHERE `
 	var result []Txn
 	for rows.Next() {
 		var txn Txn
-		if err := rows.Scan(&txn.ID, &txn.Date, &txn.Description, &txn.AmountCents, &txn.Source); err != nil {
+		if err := rows.Scan(
+			&txn.ID,
+			&txn.Date,
+			&txn.Description,
+			&txn.AmountCents,
+			&txn.Source,
+			(*pq.StringArray)(&txn.Tags),
+		); err != nil {
 			return nil, fmt.Errorf("error scanning transaction after scanning %v transactions: %w", len(result), err)
 		}
 		result = append(result, txn)
