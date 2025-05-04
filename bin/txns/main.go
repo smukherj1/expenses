@@ -24,24 +24,64 @@ type txnsServer struct {
 }
 
 type txn struct {
-	ID            string    `json:"id,omitempty"`
-	Date          string    `json:"date,omitempty"`
-	Description   string    `json:"description,omitempty"`
-	Amount        string    `json:"amount,omitempty"`
-	Source        string    `json:"source,omitempty"`
-	DescEmbedding []float32 `json:"desc_embedding,omitempty"`
-}
-
-type txnQuery struct {
-	ID          string
-	Date        string
-	Description string
-	Amount      string
-	Source      string
+	ID            string `json:"id,omitempty"`
+	Date          string `json:"date,omitempty"`
+	Description   string `json:"description,omitempty"`
+	Amount        string `json:"amount,omitempty"`
+	Source        string `json:"source,omitempty"`
+	DescEmbedding string `json:"desc_embedding,omitempty"`
 }
 
 type postTxnsResp struct {
 	ID int64 `json:"id"`
+}
+
+type validatedTxn struct {
+	date          time.Time
+	description   string
+	amountCents   int64
+	source        string
+	descEmbedding string
+}
+
+type validateTxnOpts struct {
+	skipDate          bool
+	skipDescription   bool
+	skipAmount        bool
+	skipSource        bool
+	skipDescEmbedding bool
+}
+
+type validateTxnOption func(vto *validateTxnOpts)
+
+func skipDate() validateTxnOption {
+	return func(vto *validateTxnOpts) {
+		vto.skipDate = true
+	}
+}
+
+func skipDescription() validateTxnOption {
+	return func(vto *validateTxnOpts) {
+		vto.skipDescription = true
+	}
+}
+
+func skipAmount() validateTxnOption {
+	return func(vto *validateTxnOpts) {
+		vto.skipAmount = true
+	}
+}
+
+func skipSource() validateTxnOption {
+	return func(vto *validateTxnOpts) {
+		vto.skipSource = true
+	}
+}
+
+func skipDescEmbedding() validateTxnOption {
+	return func(vto *validateTxnOpts) {
+		vto.skipDescEmbedding = true
+	}
 }
 
 func respondf(w http.ResponseWriter, status int, format string, a ...any) {
@@ -52,6 +92,68 @@ func respondf(w http.ResponseWriter, status int, format string, a ...any) {
 func respond(w http.ResponseWriter, status int, body []byte) {
 	w.WriteHeader(status)
 	w.Write(body)
+}
+
+func validateTxn(tx *txn, vopts ...validateTxnOption) (*validatedTxn, int, error) {
+	var opts validateTxnOpts
+	for _, o := range vopts {
+		o(&opts)
+	}
+	var result validatedTxn
+	if !opts.skipDate {
+		date, err := time.Parse(dateFmt, tx.Date)
+		if err != nil {
+			return nil, http.StatusBadRequest, fmt.Errorf("invalid date %q, want format yyyy/mm/dd", tx.Date)
+		}
+		result.date = date
+	}
+	if !opts.skipDescription {
+		if len(tx.Description) == 0 || len(tx.Description) > storage.DescLimit {
+			return nil, http.StatusBadRequest, fmt.Errorf("invalid description, got length %v, want 0 < length <= %v", len(tx.Description), storage.DescLimit)
+		}
+		result.description = tx.Description
+	}
+	if !opts.skipSource {
+		if len(tx.Source) == 0 || len(tx.Source) > storage.SourceLimit {
+			return nil, http.StatusBadRequest, fmt.Errorf("invalid source, got length %v, want 0 < length <= %v", len(tx.Source), storage.SourceLimit)
+		}
+		result.source = tx.Source
+	}
+	if !opts.skipAmount {
+		splitAmount := strings.Split(tx.Amount, ".")
+		var dollars, cents string
+		if len(splitAmount) == 1 {
+			dollars = splitAmount[0]
+			cents = "0"
+		} else if len(splitAmount) == 2 {
+			dollars, cents = splitAmount[0], splitAmount[1]
+		} else {
+			return nil, http.StatusBadRequest, fmt.Errorf("invalid amount %q, want <dollars>.<cents>", tx.Amount)
+		}
+		d, err := strconv.ParseInt(dollars, 10, 64)
+		if err != nil {
+			return nil, http.StatusBadRequest, fmt.Errorf("invalid dollar portion %q in amount %q, expected base 10 64-bit integer: %v", dollars, tx.Amount, err)
+		}
+		c, err := strconv.ParseInt(cents, 10, 64)
+		if err != nil {
+			return nil, http.StatusBadRequest, fmt.Errorf("invalid cents portion %q in amount %q, expected base 10 64-bit integer: %v", cents, tx.Amount, err)
+		}
+		if c > 100 {
+			return nil, http.StatusBadRequest, fmt.Errorf("invalid cents portion %q in amount %q, must be < 100", cents, tx.Amount)
+		}
+		result.amountCents = d*100 + c
+	}
+	if !opts.skipDescEmbedding {
+		var e []float32
+		if err := json.Unmarshal([]byte(tx.DescEmbedding), &e); err != nil {
+			return nil, http.StatusBadRequest, fmt.Errorf("description embedding was not a valid JSON list of 32-bit floats: %v", err)
+		}
+		if len(e) != storage.DescEmbedLen {
+			return nil, http.StatusBadRequest, fmt.Errorf("invalid embedding, got vector of length %v, want %b", len(tx.DescEmbedding), storage.DescEmbedLen)
+		}
+		result.descEmbedding = tx.DescEmbedding
+	}
+	return &result, http.StatusOK, nil
 }
 
 func (s *txnsServer) post(w http.ResponseWriter, r *http.Request) {
@@ -69,59 +171,16 @@ func (s *txnsServer) post(w http.ResponseWriter, r *http.Request) {
 		respondf(w, http.StatusBadRequest, "ID can't be specified when creating a new transaction, got ID %q, want blank", tx.ID)
 		return
 	}
-	t, err := time.Parse(dateFmt, tx.Date)
+	vtxn, code, err := validateTxn(&tx)
 	if err != nil {
-		respondf(w, http.StatusBadRequest, "invalid date %q, want format yyyy/mm/dd", tx.Date)
-		return
-	}
-	if len(tx.Description) == 0 || len(tx.Description) > 100 {
-		respondf(w, http.StatusBadRequest, "invalid description, got length %v, want 0 < length <= 100", len(tx.Description))
-		return
-	}
-	if len(tx.Source) == 0 || len(tx.Source) > 100 {
-		respondf(w, http.StatusBadRequest, "invalid source, got length %v, want 0 < length <= 100", len(tx.Source))
-		return
-	}
-	splitAmount := strings.Split(tx.Amount, ".")
-	var dollars, cents string
-	if len(splitAmount) == 1 {
-		dollars = splitAmount[0]
-		cents = "0"
-	} else if len(splitAmount) == 2 {
-		dollars, cents = splitAmount[0], splitAmount[1]
-	} else {
-		respondf(w, http.StatusBadRequest, "invalid amount %q, want <dollars>.<cents>", tx.Amount)
-		return
-	}
-	d, err := strconv.ParseInt(dollars, 10, 64)
-	if err != nil {
-		respondf(w, http.StatusBadRequest, "invalid dollar portion %q in amount %q, expected base 10 64-bit integer: %v", dollars, tx.Amount, err)
-		return
-	}
-	c, err := strconv.ParseInt(cents, 10, 64)
-	if err != nil {
-		respondf(w, http.StatusBadRequest, "invalid cents portion %q in amount %q, expected base 10 64-bit integer: %v", cents, tx.Amount, err)
-		return
-	}
-	if c > 100 {
-		respondf(w, http.StatusBadRequest, "invalid cents portion %q in amount %q, must be < 100", cents, tx.Amount)
-		return
-	}
-	if len(tx.DescEmbedding) != 768 {
-		respondf(w, http.StatusBadRequest, "invalid embedding, got vector of length %v, want 768", len(tx.DescEmbedding))
-		return
-	}
-	embeddingJSON, err := json.Marshal(tx.DescEmbedding)
-	if err != nil {
-		respondf(w, http.StatusInternalServerError, "unable to transform embedding vector into a JSON list: %v", err)
-		return
+		respondf(w, code, "invalid transaction: %v", err)
 	}
 	tid, err := s.db.CreateTxn(r.Context(), &storage.Txn{
-		Date:          t,
-		Description:   tx.Description,
-		AmountCents:   d*100 + c,
-		Source:        tx.Source,
-		DescEmbedding: string(embeddingJSON),
+		Date:          vtxn.date,
+		Description:   vtxn.description,
+		AmountCents:   vtxn.amountCents,
+		Source:        vtxn.source,
+		DescEmbedding: vtxn.descEmbedding,
 	})
 	if err != nil {
 		respondf(w, http.StatusInternalServerError, "error creating txn: %v", err)
@@ -136,8 +195,71 @@ func (s *txnsServer) post(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *txnsServer) get(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(fmt.Sprintln("Ok")))
+	date := r.URL.Query().Get("date")
+	desc := r.URL.Query().Get("description")
+	amount := r.URL.Query().Get("amount")
+	source := r.URL.Query().Get("source")
+	opts := []validateTxnOption{skipDescEmbedding()}
+	if date == "" {
+		opts = append(opts, skipDate())
+	}
+	if desc == "" {
+		opts = append(opts, skipDescription())
+	}
+	if amount == "" {
+		opts = append(opts, skipAmount())
+	}
+	if source == "" {
+		opts = append(opts, skipSource())
+	}
+	vtxn, code, err := validateTxn(&txn{
+		Date:        date,
+		Description: desc,
+		Amount:      amount,
+		Source:      source,
+	}, opts...)
+	if err != nil {
+		respondf(w, code, "invalid query parameter(s): %v", err)
+		return
+	}
+	tq := storage.TxnQuery{}
+	if date != "" {
+		tq.Date = &vtxn.date
+	}
+	if desc != "" {
+		tq.Description = &vtxn.description
+	}
+	if amount != "" {
+		tq.AmountCents = &vtxn.amountCents
+	}
+	if source != "" {
+		tq.Source = &vtxn.source
+	}
+	txns, err := s.db.QueryTxn(r.Context(), &tq)
+	if err != nil {
+		respondf(w, http.StatusInternalServerError, "error fetching transactions: %v", err)
+		return
+	}
+	respBody, err := json.Marshal(storageToTxns(txns))
+	if err != nil {
+		respondf(w, http.StatusInternalServerError, "error converting fetched transactions to JSON: %v", err)
+		return
+	}
+	respond(w, http.StatusOK, respBody)
+}
+
+func storageToTxns(sts []storage.Txn) []txn {
+	var result []txn
+	for _, s := range sts {
+		result = append(result, txn{
+			ID:          fmt.Sprint(s.ID),
+			Date:        s.Date.Format(dateFmt),
+			Description: s.Description,
+			Amount:      fmt.Sprintf("%v.%v", s.AmountCents/100, s.AmountCents%100),
+			Source:      s.Source,
+		})
+	}
+	return result
 }
 
 func (s *txnsServer) getByID(w http.ResponseWriter, r *http.Request) {
@@ -151,7 +273,7 @@ func (s *txnsServer) getByID(w http.ResponseWriter, r *http.Request) {
 		respondf(w, http.StatusBadRequest, "id %q in path was not a valid 64-bit integer: %v", id, err)
 		return
 	}
-	t, err := s.db.GetByID(r.Context(), txnID)
+	t, err := s.db.GetTxn(r.Context(), txnID)
 	if err != nil {
 		respondf(w, http.StatusInternalServerError, "error fetching txn: %v", err)
 		return
