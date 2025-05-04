@@ -18,6 +18,7 @@ const (
 	DescEmbedLen = 768
 	TagsLimit    = 30
 	TagLenLimit  = 10
+	dateQueryFmt = "2006-01-02"
 )
 
 var (
@@ -48,14 +49,18 @@ func (tx *Txn) validate() error {
 }
 
 type TxnQuery struct {
-	Date        *time.Time
+	FromDate    *time.Time
+	ToDate      *time.Time
 	Description *string
 	AmountCents *int64
 	Source      *string
+	StartID     int64
+	Limit       int64
 }
 
 func (tq *TxnQuery) validate() error {
-	if tq.Date == nil && tq.Description == nil && tq.AmountCents == nil && tq.Source == nil {
+	var defaultTxn TxnQuery
+	if *tq == defaultTxn {
 		return fmt.Errorf("all fields were unspecified")
 	}
 	if tq.Description != nil {
@@ -73,6 +78,14 @@ func (tq *TxnQuery) validate() error {
 		if !srcRegexp.MatchString(*tq.Source) {
 			return fmt.Errorf("source had invalid characters, got '%v', only alphanumeric, spaces, hyphens and dashes are allowed", *tq.Source)
 		}
+	}
+	if tq.Limit < 0 || tq.Limit > 1000 {
+		return fmt.Errorf("invalid limit, got %v, want >= 0 and <= 1000", tq.Limit)
+	} else if tq.Limit == 0 {
+		tq.Limit = 1000
+	}
+	if tq.StartID < 0 {
+		return fmt.Errorf("invalid start ID, got %v, want >= 0", tq.StartID)
 	}
 
 	return nil
@@ -126,11 +139,14 @@ func (s *Storage) QueryTxn(ctx context.Context, tq *TxnQuery) ([]Txn, error) {
 	}
 	q := `SELECT ID, DATE, DESCRIPTION, AMOUNT_CENTS, SOURCE
 FROM TRANSACTIONS WHERE `
-	var clauses []string
-	if tq.Date != nil {
-		ds := tq.Date.Format("2006-01-02")
-		dsNext := tq.Date.Add(24 * time.Hour).Format("2006-01-02")
-		clauses = append(clauses, fmt.Sprintf("DATE >= '%v' AND DATE < '%v'", ds, dsNext))
+	clauses := []string{fmt.Sprint("ID >= ", tq.StartID)}
+	if tq.FromDate != nil {
+		ds := tq.FromDate.Format(dateQueryFmt)
+		clauses = append(clauses, fmt.Sprintf("DATE >= '%v'", ds))
+	}
+	if tq.ToDate != nil {
+		ds := tq.ToDate.Format(dateQueryFmt)
+		clauses = append(clauses, fmt.Sprintf("DATE <= '%v'", ds))
 	}
 	// Raw strings in query are ripe for SQL injection attacks. Leaning on only allowing
 	// alphanumeric characters to defend against this for now.
@@ -141,10 +157,10 @@ FROM TRANSACTIONS WHERE `
 		clauses = append(clauses, fmt.Sprintf("SOURCE = '%v'", *tq.Source))
 	}
 	if tq.AmountCents != nil {
-		clauses = append(clauses, fmt.Sprintf("AMOUNT_CENTS = %v", *tq.AmountCents))
+		clauses = append(clauses, fmt.Sprint("AMOUNT_CENTS = ", *tq.AmountCents))
 	}
-	q += strings.Join(clauses, "AND")
-	q += " LIMIT 1000"
+	q += strings.Join(clauses, " AND ")
+	q += fmt.Sprint(" ORDER BY ID ASC LIMIT ", tq.Limit)
 
 	rows, err := s.db.QueryContext(ctx, q)
 	if err != nil {

@@ -94,6 +94,14 @@ func respond(w http.ResponseWriter, status int, body []byte) {
 	w.Write(body)
 }
 
+func validateDate(dateStr string) (time.Time, int, error) {
+	date, err := time.Parse(dateFmt, dateStr)
+	if err != nil {
+		return time.Time{}, http.StatusBadRequest, fmt.Errorf("invalid date %q, want format yyyy/mm/dd", dateStr)
+	}
+	return date, http.StatusOK, nil
+}
+
 func validateTxn(tx *txn, vopts ...validateTxnOption) (*validatedTxn, int, error) {
 	var opts validateTxnOpts
 	for _, o := range vopts {
@@ -101,9 +109,9 @@ func validateTxn(tx *txn, vopts ...validateTxnOption) (*validatedTxn, int, error
 	}
 	var result validatedTxn
 	if !opts.skipDate {
-		date, err := time.Parse(dateFmt, tx.Date)
+		date, code, err := validateDate(tx.Date)
 		if err != nil {
-			return nil, http.StatusBadRequest, fmt.Errorf("invalid date %q, want format yyyy/mm/dd", tx.Date)
+			return nil, code, err
 		}
 		result.date = date
 	}
@@ -195,14 +203,48 @@ func (s *txnsServer) post(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *txnsServer) get(w http.ResponseWriter, r *http.Request) {
-	date := r.URL.Query().Get("date")
+	fromDateStr := r.URL.Query().Get("fromDate")
+	toDateStr := r.URL.Query().Get("toDate")
 	desc := r.URL.Query().Get("description")
 	amount := r.URL.Query().Get("amount")
 	source := r.URL.Query().Get("source")
-	opts := []validateTxnOption{skipDescEmbedding()}
-	if date == "" {
-		opts = append(opts, skipDate())
+	startIDStr := r.URL.Query().Get("startId")
+	limitStr := r.URL.Query().Get("limit")
+	var fromDate, toDate *time.Time
+	if fromDateStr != "" {
+		d, code, err := validateDate(fromDateStr)
+		if err != nil {
+			respondf(w, code, "invalid from date: %v", err)
+			return
+		}
+		fromDate = &d
 	}
+	if toDateStr != "" {
+		d, code, err := validateDate(toDateStr)
+		if err != nil {
+			respondf(w, code, "invalid to date: %v", err)
+			return
+		}
+		toDate = &d
+	}
+	var startID, limit int64
+	if startIDStr != "" {
+		var err error
+		startID, err = strconv.ParseInt(startIDStr, 10, 64)
+		if err != nil || startID < 0 {
+			respondf(w, http.StatusBadRequest, "invalid startID, got '%v', want number >= 0", startIDStr)
+			return
+		}
+	}
+	if limitStr != "" {
+		var err error
+		limit, err = strconv.ParseInt(limitStr, 10, 64)
+		if err != nil || limit < 0 || limit > 1000 {
+			respondf(w, http.StatusBadRequest, "invalid limit, got '%v', want number >= 0 and <= 1000", limitStr)
+			return
+		}
+	}
+	opts := []validateTxnOption{skipDescEmbedding(), skipDate()}
 	if desc == "" {
 		opts = append(opts, skipDescription())
 	}
@@ -213,7 +255,6 @@ func (s *txnsServer) get(w http.ResponseWriter, r *http.Request) {
 		opts = append(opts, skipSource())
 	}
 	vtxn, code, err := validateTxn(&txn{
-		Date:        date,
 		Description: desc,
 		Amount:      amount,
 		Source:      source,
@@ -222,9 +263,11 @@ func (s *txnsServer) get(w http.ResponseWriter, r *http.Request) {
 		respondf(w, code, "invalid query parameter(s): %v", err)
 		return
 	}
-	tq := storage.TxnQuery{}
-	if date != "" {
-		tq.Date = &vtxn.date
+	tq := storage.TxnQuery{
+		FromDate: fromDate,
+		ToDate:   toDate,
+		StartID:  startID,
+		Limit:    limit,
 	}
 	if desc != "" {
 		tq.Description = &vtxn.description
@@ -240,7 +283,7 @@ func (s *txnsServer) get(w http.ResponseWriter, r *http.Request) {
 		respondf(w, http.StatusInternalServerError, "error fetching transactions: %v", err)
 		return
 	}
-	respBody, err := json.Marshal(storageToTxns(txns))
+	respBody, err := json.Marshal(txnsStorageToResp(txns))
 	if err != nil {
 		respondf(w, http.StatusInternalServerError, "error converting fetched transactions to JSON: %v", err)
 		return
@@ -248,10 +291,17 @@ func (s *txnsServer) get(w http.ResponseWriter, r *http.Request) {
 	respond(w, http.StatusOK, respBody)
 }
 
-func storageToTxns(sts []storage.Txn) []txn {
-	var result []txn
+type txnsResp struct {
+	Txns   []txn  `json:"txns,omitempty"`
+	NextID string `json:"nextId,omitempty"`
+}
+
+func txnsStorageToResp(sts []storage.Txn) txnsResp {
+	var result txnsResp
+	var nextID int64
 	for _, s := range sts {
-		result = append(result, txn{
+		nextID = max(nextID, s.ID+1)
+		result.Txns = append(result.Txns, txn{
 			ID:          fmt.Sprint(s.ID),
 			Date:        s.Date.Format(dateFmt),
 			Description: s.Description,
@@ -259,6 +309,7 @@ func storageToTxns(sts []storage.Txn) []txn {
 			Source:      s.Source,
 		})
 	}
+	result.NextID = fmt.Sprint(nextID)
 	return result
 }
 
@@ -297,6 +348,10 @@ func (s *txnsServer) getByID(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(string(resp)))
 }
 
+func (s *txnsServer) patchTxn(w http.ResponseWriter, r *http.Request) {
+	respond(w, http.StatusNotImplemented, []byte("not implemented"))
+}
+
 func main() {
 	db, err := storage.New()
 	if err != nil {
@@ -309,8 +364,9 @@ func main() {
 
 	r.Route("/txns", func(r chi.Router) {
 		r.Get("/", ts.get)
-		r.Get("/{id}", ts.getByID)
 		r.Post("/", ts.post)
+		r.Get("/{id}", ts.getByID)
+		r.Patch("/{id}", ts.patchTxn)
 	})
 	addr := ":3000"
 	log.Println("Running txns server at", addr)
