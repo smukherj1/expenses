@@ -38,6 +38,7 @@ type postTxnsResp struct {
 }
 
 type validatedTxn struct {
+	id            int64
 	date          time.Time
 	description   string
 	amountCents   int64
@@ -47,6 +48,7 @@ type validatedTxn struct {
 }
 
 type validateTxnOpts struct {
+	skipID            bool
 	skipDate          bool
 	skipDescription   bool
 	skipAmount        bool
@@ -55,6 +57,12 @@ type validateTxnOpts struct {
 }
 
 type validateTxnOption func(vto *validateTxnOpts)
+
+func skipID() validateTxnOption {
+	return func(vto *validateTxnOpts) {
+		vto.skipID = true
+	}
+}
 
 func skipDate() validateTxnOption {
 	return func(vto *validateTxnOpts) {
@@ -110,6 +118,9 @@ func validateTxn(tx *txn, vopts ...validateTxnOption) (*validatedTxn, int, error
 		o(&opts)
 	}
 	var result validatedTxn
+	if !opts.skipID {
+
+	}
 	if !opts.skipDate {
 		date, code, err := validateDate(tx.Date)
 		if err != nil {
@@ -150,6 +161,9 @@ func validateTxn(tx *txn, vopts ...validateTxnOption) (*validatedTxn, int, error
 		}
 		if c > 100 {
 			return nil, http.StatusBadRequest, fmt.Errorf("invalid cents portion %q in amount %q, must be < 100", cents, tx.Amount)
+		}
+		if d < 0 {
+			c = -c
 		}
 		result.amountCents = d*100 + c
 	}
@@ -294,7 +308,7 @@ func (s *txnsServer) get(w http.ResponseWriter, r *http.Request) {
 	if source != "" {
 		tq.Source = &vtxn.source
 	}
-	txns, err := s.db.QueryTxn(r.Context(), &tq)
+	txns, err := s.db.QueryTxns(r.Context(), &tq)
 	if err != nil {
 		respondf(w, http.StatusInternalServerError, "error fetching transactions: %v", err)
 		return
@@ -317,11 +331,15 @@ func txnsStorageToResp(sts []storage.Txn) txnsResp {
 	var nextID int64
 	for _, s := range sts {
 		nextID = max(nextID, s.ID+1)
+		cents := s.AmountCents % 100
+		if cents < 0 {
+			cents = -cents
+		}
 		result.Txns = append(result.Txns, txn{
 			ID:          fmt.Sprint(s.ID),
 			Date:        s.Date.Format(dateFmt),
 			Description: s.Description,
-			Amount:      fmt.Sprintf("%v.%v", s.AmountCents/100, s.AmountCents%100),
+			Amount:      fmt.Sprintf("%v.%v", s.AmountCents/100, cents),
 			Source:      s.Source,
 		})
 	}
@@ -349,14 +367,8 @@ func (s *txnsServer) getByID(w http.ResponseWriter, r *http.Request) {
 		respondf(w, http.StatusNotFound, "txn %v not found", txnID)
 		return
 	}
-	txn := txn{
-		ID:          fmt.Sprint(t.ID),
-		Date:        t.Date.Format(dateFmt),
-		Description: t.Description,
-		Amount:      fmt.Sprint(t.AmountCents),
-		Tags:        t.Tags,
-	}
-	resp, err := json.Marshal(&txn)
+	txnResp := txnsStorageToResp([]storage.Txn{*t})
+	resp, err := json.Marshal(txnResp.Txns[0])
 	if err != nil {
 		respondf(w, http.StatusInternalServerError, "error generating JSON for response: %v", err)
 		return
@@ -365,7 +377,22 @@ func (s *txnsServer) getByID(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(string(resp)))
 }
 
-func (s *txnsServer) patchTxn(w http.ResponseWriter, r *http.Request) {
+func (s *txnsServer) patch(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		respondf(w, http.StatusBadRequest, "error reading request body: %v", err)
+		return
+	}
+	var tx txn
+	if err := json.Unmarshal(body, &tx); err != nil {
+		respondf(w, http.StatusBadRequest, "error parsing body as a JSON transaction: %v", err)
+		return
+	}
+	if tx.ID != "" {
+		respondf(w, http.StatusBadRequest, "ID can't be specified when creating a new transaction, got ID %q, want blank", tx.ID)
+		return
+	}
+	// if err := s.db.UpdateTxn(r.Context(), id)
 	respond(w, http.StatusNotImplemented, []byte("not implemented"))
 }
 
@@ -378,12 +405,13 @@ func main() {
 
 	r := chi.NewRouter()
 	r.Use(middleware.Timeout(60 * time.Second))
+	r.Use(middleware.Recoverer)
 
 	r.Route("/txns", func(r chi.Router) {
 		r.Get("/", ts.get)
 		r.Post("/", ts.post)
+		r.Patch("/", ts.patch)
 		r.Get("/{id}", ts.getByID)
-		r.Patch("/{id}", ts.patchTxn)
 	})
 	addr := ":3000"
 	log.Println("Running txns server at", addr)

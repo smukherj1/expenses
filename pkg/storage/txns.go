@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -24,6 +25,7 @@ const (
 var (
 	descRegexp = regexp.MustCompile(`^[\w\s-]+$`)
 	srcRegexp  = regexp.MustCompile(`^[\w\s-]+$`)
+	tagRegexp  = regexp.MustCompile(`^[\w\s-]+$`)
 )
 
 type Txn struct {
@@ -36,6 +38,35 @@ type Txn struct {
 	DescEmbedding string
 }
 
+func validateTags(tags []string) error {
+	if l := len(tags); l > MaxTags {
+		return fmt.Errorf("invalid number of tags, got %v, want <= %v", l, MaxTags)
+	}
+	for i, t := range tags {
+		if l := len(t); l == 0 || l > TagSizeLimit {
+			return fmt.Errorf("invalid tag at index %v, got size %v, want size > 0 and <= %v", i, l, TagSizeLimit)
+		}
+		if !tagRegexp.MatchString(t) {
+			return fmt.Errorf("illegal characters in tag at index %v, got '%v', only alphanumeric, underscores and dashes are allowed", i, t)
+		}
+	}
+	return nil
+}
+
+func validateDescEmbedding(descEmbedding string) error {
+	if descEmbedding == "" {
+		return nil
+	}
+	var e []float32
+	if err := json.Unmarshal([]byte(descEmbedding), &e); err != nil {
+		return fmt.Errorf("description embedding was not a valid JSON list of floats: %v", err)
+	}
+	if len(e) != DescEmbedLen {
+		return fmt.Errorf("description embedding vector had invalid length, got %v, want %v", len(e), DescEmbedLen)
+	}
+	return nil
+}
+
 func (tx *Txn) validate() error {
 	if tx.Date.IsZero() {
 		return errors.New("date was not specified")
@@ -46,13 +77,11 @@ func (tx *Txn) validate() error {
 	if l := len(tx.Source); l == 0 || l > SourceLimit {
 		return fmt.Errorf("invalid source length, got %v, want >0 and <= %v", l, SourceLimit)
 	}
-	if l := len(tx.Tags); l > MaxTags {
-		return fmt.Errorf("invalid number of tags, got %v, want <= %v", l, MaxTags)
+	if err := validateTags(tx.Tags); err != nil {
+		return err
 	}
-	for i, t := range tx.Tags {
-		if l := len(t); l == 0 || l > TagSizeLimit {
-			return fmt.Errorf("invalid tag at index %v, got size %v, want size > 0 and <= %v", i, l, TagSizeLimit)
-		}
+	if err := validateDescEmbedding(tx.DescEmbedding); err != nil {
+		return err
 	}
 	return nil
 }
@@ -119,11 +148,19 @@ func (s *Storage) CreateTxn(ctx context.Context, t *Txn) (int64, error) {
 	if err := t.validate(); err != nil {
 		return 0, err
 	}
-	q := `INSERT INTO TRANSACTIONS (DATE, DESCRIPTION, AMOUNT_CENTS, SOURCE, TAGS, DESC_EMBEDDING)
-VALUES ($1, $2, $3, $4, $5, $6) RETURNING ID
+	cols := []string{"DATE", "DESCRIPTION", "AMOUNT_CENTS", "SOURCE", "TAGS"}
+	vars := []string{"$1", "$2", "$3", "$4", "$5"}
+	vals := []any{t.Date, t.Description, t.AmountCents, t.Source, pq.Array(t.Tags)}
+	if t.DescEmbedding != "" {
+		cols = append(cols, "DESC_EMBEDDING")
+		vars = append(vars, "$6")
+		vals = append(vals, t.DescEmbedding)
+	}
+	q := `INSERT INTO TRANSACTIONS (` + strings.Join(cols, ", ") + `)
+VALUES (` + strings.Join(vars, ", ") + `) RETURNING ID
 `
 	var id int64
-	if err := s.db.QueryRowContext(ctx, q, t.Date, t.Description, t.AmountCents, t.Source, pq.Array(t.Tags), t.DescEmbedding).Scan(&id); err != nil {
+	if err := s.db.QueryRowContext(ctx, q, vals...).Scan(&id); err != nil {
 		return 0, fmt.Errorf("error creating transaction: %w", err)
 	}
 	return id, nil
@@ -148,36 +185,85 @@ FROM TRANSACTIONS WHERE ID = $1
 	return result, nil
 }
 
-func (s *Storage) QueryTxn(ctx context.Context, tq *TxnQuery) ([]Txn, error) {
+type TxnUpdates struct {
+	Tags          *[]string
+	DescEmbedding *string
+}
+
+func (s *Storage) UpdateTxn(ctx context.Context, id int64, tu *TxnUpdates) error {
+	var defaultUpdates TxnUpdates
+	if tu == nil || *tu == defaultUpdates {
+		return nil
+	}
+	q := `UPDATE TRANSACTIONS SET `
+	vCounter := 1
+	var assigns []string
+	var vals []any
+	if tu.Tags != nil {
+		if err := validateTags(*tu.Tags); err != nil {
+			return fmt.Errorf("unable to update txn %v with invalid tags: %w", id, err)
+		}
+		assigns = append(assigns, fmt.Sprint("TAGS = $", vCounter))
+		vals = append(vals, pq.Array(*tu.Tags))
+		vCounter += 1
+	}
+	if tu.DescEmbedding != nil {
+		if err := validateDescEmbedding(*tu.DescEmbedding); err != nil {
+			return fmt.Errorf("unable to update txn %v with invalid description embedding: %w", id, err)
+		}
+		assigns = append(assigns, fmt.Sprint("DESC_EMBEDDING = $", vCounter))
+		vals = append(vals, *tu.DescEmbedding)
+		vCounter += 1
+	}
+	q += strings.Join(assigns, ", ")
+	q += fmt.Sprint(" WHERE ID = ", id)
+	rows, err := s.db.QueryContext(ctx, q, vals...)
+	if err != nil {
+		return fmt.Errorf("error updating transaction: %w", err)
+	}
+	defer rows.Close()
+	return nil
+}
+
+func (s *Storage) QueryTxns(ctx context.Context, tq *TxnQuery) ([]Txn, error) {
 	if err := tq.validate(); err != nil {
 		return nil, err
 	}
 	q := `SELECT ID, DATE, DESCRIPTION, AMOUNT_CENTS, SOURCE, TAGS
 FROM TRANSACTIONS WHERE `
+	var qArgs []any
+	qCounter := 1
 	clauses := []string{fmt.Sprint("ID >= ", tq.StartID)}
 	if tq.FromDate != nil {
 		ds := tq.FromDate.Format(dateQueryFmt)
-		clauses = append(clauses, fmt.Sprintf("DATE >= '%v'", ds))
+		clauses = append(clauses, fmt.Sprint("DATE >= $", qCounter))
+		qCounter += 1
+		qArgs = append(qArgs, ds)
 	}
 	if tq.ToDate != nil {
 		ds := tq.ToDate.Format(dateQueryFmt)
-		clauses = append(clauses, fmt.Sprintf("DATE <= '%v'", ds))
+		clauses = append(clauses, fmt.Sprint("DATE <= $", qCounter))
+		qCounter += 1
+		qArgs = append(qArgs, ds)
 	}
-	// Raw strings in query are ripe for SQL injection attacks. Leaning on only allowing
-	// alphanumeric characters to defend against this for now.
 	if tq.Description != nil {
-		clauses = append(clauses, fmt.Sprintf("DESCRIPTION = '%v'", *tq.Description))
+		clauses = append(clauses, fmt.Sprint("DESCRIPTION = $", qCounter))
+		qCounter += 1
+		qArgs = append(qArgs, *tq.Description)
 	}
 	if tq.Source != nil {
-		clauses = append(clauses, fmt.Sprintf("SOURCE = '%v'", *tq.Source))
+		clauses = append(clauses, fmt.Sprint("SOURCE = $", qCounter))
+		qCounter += 1
+		qArgs = append(qArgs, *tq.Source)
 	}
 	if tq.AmountCents != nil {
-		clauses = append(clauses, fmt.Sprint("AMOUNT_CENTS = ", *tq.AmountCents))
+		clauses = append(clauses, fmt.Sprint("AMOUNT_CENTS = $", qCounter))
+		qCounter += 1
+		qArgs = append(qArgs, *tq.AmountCents)
 	}
 	q += strings.Join(clauses, " AND ")
 	q += fmt.Sprint(" ORDER BY ID ASC LIMIT ", tq.Limit)
-
-	rows, err := s.db.QueryContext(ctx, q)
+	rows, err := s.db.QueryContext(ctx, q, qArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("error querying for transactions: %w", err)
 	}
