@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -119,7 +120,14 @@ func validateTxn(tx *txn, vopts ...validateTxnOption) (*validatedTxn, int, error
 	}
 	var result validatedTxn
 	if !opts.skipID {
-
+		if len(tx.ID) == 0 {
+			return nil, http.StatusBadRequest, errors.New("ID can't be an empty string")
+		}
+		id, err := strconv.ParseInt(tx.ID, 10, 64)
+		if err != nil {
+			return nil, http.StatusBadRequest, fmt.Errorf("invalid ID, got '%v', wanted valid 64-bit integer", err)
+		}
+		result.id = id
 	}
 	if !opts.skipDate {
 		date, code, err := validateDate(tx.Date)
@@ -204,7 +212,7 @@ func (s *txnsServer) post(w http.ResponseWriter, r *http.Request) {
 		respondf(w, http.StatusBadRequest, "ID can't be specified when creating a new transaction, got ID %q, want blank", tx.ID)
 		return
 	}
-	var vopts []validateTxnOption
+	vopts := []validateTxnOption{skipID()}
 	if tx.DescEmbedding == "" {
 		vopts = append(vopts, skipDescEmbedding())
 	}
@@ -377,23 +385,52 @@ func (s *txnsServer) getByID(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(string(resp)))
 }
 
+type patchTxn struct {
+	ID            string   `json:"id,omitempty"`
+	Tags          []string `json:"tags,omitempty"`
+	DescEmbedding string   `json:"desc_embedding,omitempty"`
+}
+
 func (s *txnsServer) patch(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		respondf(w, http.StatusBadRequest, "error reading request body: %v", err)
 		return
 	}
-	var tx txn
-	if err := json.Unmarshal(body, &tx); err != nil {
+	var ptx patchTxn
+	if err := json.Unmarshal(body, &ptx); err != nil {
 		respondf(w, http.StatusBadRequest, "error parsing body as a JSON transaction: %v", err)
 		return
 	}
-	if tx.ID != "" {
-		respondf(w, http.StatusBadRequest, "ID can't be specified when creating a new transaction, got ID %q, want blank", tx.ID)
+	tx := txn{
+		ID:            ptx.ID,
+		Tags:          ptx.Tags,
+		DescEmbedding: ptx.DescEmbedding,
+	}
+	vopts := []validateTxnOption{skipDate(), skipDescription(), skipAmount(), skipSource()}
+	if len(ptx.DescEmbedding) == 0 {
+		vopts = append(vopts, skipDescEmbedding())
+	}
+	vtx, code, err := validateTxn(&tx, vopts...)
+	if err != nil {
+		respondf(w, code, fmt.Sprintf("error validating patch request: %v", err))
 		return
 	}
-	// if err := s.db.UpdateTxn(r.Context(), id)
-	respond(w, http.StatusNotImplemented, []byte("not implemented"))
+	tu := &storage.TxnUpdates{}
+	if len(vtx.tags) != 0 {
+		tu.Tags = &vtx.tags
+	}
+	if len(vtx.descEmbedding) != 0 {
+		tu.DescEmbedding = &vtx.descEmbedding
+	}
+	if ok, err := s.db.UpdateTxn(r.Context(), vtx.id, tu); err != nil {
+		respondf(w, http.StatusInternalServerError, fmt.Sprintf("error patching txn %v: %v", vtx.id, err))
+		return
+	} else if !ok {
+		respondf(w, http.StatusNotFound, fmt.Sprintf("txn %v not found", vtx.id))
+		return
+	}
+	respondf(w, http.StatusOK, "txn %v updated", vtx.id)
 }
 
 func main() {

@@ -190,10 +190,10 @@ type TxnUpdates struct {
 	DescEmbedding *string
 }
 
-func (s *Storage) UpdateTxn(ctx context.Context, id int64, tu *TxnUpdates) error {
+func (s *Storage) UpdateTxn(ctx context.Context, id int64, tu *TxnUpdates) (bool, error) {
 	var defaultUpdates TxnUpdates
 	if tu == nil || *tu == defaultUpdates {
-		return nil
+		return false, nil
 	}
 	q := `UPDATE TRANSACTIONS SET `
 	vCounter := 1
@@ -201,7 +201,7 @@ func (s *Storage) UpdateTxn(ctx context.Context, id int64, tu *TxnUpdates) error
 	var vals []any
 	if tu.Tags != nil {
 		if err := validateTags(*tu.Tags); err != nil {
-			return fmt.Errorf("unable to update txn %v with invalid tags: %w", id, err)
+			return false, fmt.Errorf("unable to update txn %v with invalid tags: %w", id, err)
 		}
 		assigns = append(assigns, fmt.Sprint("TAGS = $", vCounter))
 		vals = append(vals, pq.Array(*tu.Tags))
@@ -209,7 +209,7 @@ func (s *Storage) UpdateTxn(ctx context.Context, id int64, tu *TxnUpdates) error
 	}
 	if tu.DescEmbedding != nil {
 		if err := validateDescEmbedding(*tu.DescEmbedding); err != nil {
-			return fmt.Errorf("unable to update txn %v with invalid description embedding: %w", id, err)
+			return false, fmt.Errorf("unable to update txn %v with invalid description embedding: %w", id, err)
 		}
 		assigns = append(assigns, fmt.Sprint("DESC_EMBEDDING = $", vCounter))
 		vals = append(vals, *tu.DescEmbedding)
@@ -218,11 +218,13 @@ func (s *Storage) UpdateTxn(ctx context.Context, id int64, tu *TxnUpdates) error
 	q += strings.Join(assigns, ", ")
 	q += fmt.Sprint(" WHERE ID = ", id)
 	rows, err := s.db.QueryContext(ctx, q, vals...)
-	if err != nil {
-		return fmt.Errorf("error updating transaction: %w", err)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	} else if err != nil {
+		return false, fmt.Errorf("error updating transaction: %w", err)
 	}
 	defer rows.Close()
-	return nil
+	return true, nil
 }
 
 func (s *Storage) QueryTxns(ctx context.Context, tq *TxnQuery) ([]Txn, error) {
