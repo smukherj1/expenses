@@ -7,11 +7,6 @@ _ollama_url = "http://localhost:11434/api/embed"
 
 
 def embedding(text: str) -> str:
-  """
-  curl http://localhost:11434/api/embeddings -d '{
-  "model": "nomic-embed-text",
-  "prompt": "The sky is blue because of Rayleigh scattering"
-}'"""
   resp = requests.post(_ollama_url,
                        json={
                            "model": "nomic-embed-text",
