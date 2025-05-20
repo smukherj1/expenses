@@ -3,7 +3,7 @@ services:
     image: txns:latest
     restart: always
     ports:
-      - 3000:3000
+      - 4000:4000
   adminer:
     image: adminer:5.2.1
     restart: always

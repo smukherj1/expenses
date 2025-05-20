@@ -450,7 +450,7 @@ func main() {
 		r.Patch("/", ts.patch)
 		r.Get("/{id}", ts.getByID)
 	})
-	addr := ":3000"
+	addr := ":4000"
 	log.Println("Running txns server at", addr)
 	if err := http.ListenAndServe(addr, r); err != nil {
 		log.Fatalf("Error while serving: %v", err)

@@ -2,7 +2,7 @@ import pandas as pd
 import requests
 import json
 
-_upload_url = "http://localhost:3000/txns"
+_upload_url = "http://localhost:4000/txns"
 _ollama_url = "http://localhost:11434/api/embed"
 
 
