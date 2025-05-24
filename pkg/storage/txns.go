@@ -249,9 +249,9 @@ FROM TRANSACTIONS WHERE `
 		qArgs = append(qArgs, ds)
 	}
 	if tq.Description != nil {
-		clauses = append(clauses, fmt.Sprint("DESCRIPTION = $", qCounter))
+		clauses = append(clauses, fmt.Sprint("DESCRIPTION ILIKE $", qCounter))
 		qCounter += 1
-		qArgs = append(qArgs, *tq.Description)
+		qArgs = append(qArgs, "%"+*tq.Description+"%")
 	}
 	if tq.Source != nil {
 		clauses = append(clauses, fmt.Sprint("SOURCE = $", qCounter))

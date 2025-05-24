@@ -95,12 +95,25 @@ func skipDescEmbedding() validateTxnOption {
 	}
 }
 
+var commonHeaders = map[string]string{
+	"Access-Control-Allow-Origin":  "*",
+	"Access-Control-Allow-Headers": "Accept, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization",
+	"Content-Type":                 "application/json",
+	"Access-Control-Allow-Methods": "POST, GET, OPTIONS, PUT, DELETE",
+}
+
 func respondf(w http.ResponseWriter, status int, format string, a ...any) {
+	for k, v := range commonHeaders {
+		w.Header().Set(k, v)
+	}
 	w.WriteHeader(status)
 	fmt.Fprintf(w, format, a...)
 }
 
 func respond(w http.ResponseWriter, status int, body []byte) {
+	for k, v := range commonHeaders {
+		w.Header().Set(k, v)
+	}
 	w.WriteHeader(status)
 	w.Write(body)
 }
@@ -282,7 +295,7 @@ func (s *txnsServer) get(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	opts := []validateTxnOption{skipDescEmbedding(), skipDate()}
+	opts := []validateTxnOption{skipID(), skipDescEmbedding(), skipDate()}
 	if desc == "" {
 		opts = append(opts, skipDescription())
 	}
@@ -433,6 +446,10 @@ func (s *txnsServer) patch(w http.ResponseWriter, r *http.Request) {
 	respondf(w, http.StatusOK, "txn %v updated", vtx.id)
 }
 
+func corsHandler(w http.ResponseWriter, _ *http.Request) {
+	respondf(w, http.StatusOK, "")
+}
+
 func main() {
 	db, err := storage.New()
 	if err != nil {
@@ -443,12 +460,16 @@ func main() {
 	r := chi.NewRouter()
 	r.Use(middleware.Timeout(60 * time.Second))
 	r.Use(middleware.Recoverer)
+	for k, v := range commonHeaders {
+		r.Use(middleware.SetHeader(k, v))
+	}
 
 	r.Route("/txns", func(r chi.Router) {
 		r.Get("/", ts.get)
 		r.Post("/", ts.post)
 		r.Patch("/", ts.patch)
 		r.Get("/{id}", ts.getByID)
+		r.Options("/", corsHandler)
 	})
 	addr := ":4000"
 	log.Println("Running txns server at", addr)

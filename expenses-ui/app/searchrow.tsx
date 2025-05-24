@@ -24,7 +24,7 @@ import { Label } from "@/components/ui/label";
 
 // Define the props interface for SearchRow
 interface SearchRowProps {
-    tagged: "yes" | "no" | undefined;
+    tagged: "yes" | "no";
     onTaggedChange: (value: "yes" | "no") => void;
     fromDate: Date | undefined;
     onFromDateChange: (date: Date | undefined) => void;
