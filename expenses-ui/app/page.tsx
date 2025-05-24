@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { transactionColumns } from "./transactions/columns"
-import { transactions, Transaction } from "./transactions/data"
+import { Transaction } from "./transactions/data"
 import { TransactionsTable } from "./transactions/transactions-table"
 import { SearchRow } from "./searchrow"
 import { useDebouncedCallback } from 'use-debounce';
@@ -27,6 +27,11 @@ interface SearchParams {
   description: string
 };
 
+interface TransactionsResp {
+  nextId: string,
+  txns: Transaction[],
+}
+
 async function leSearch({ tagged, fromDate, toDate, description }: SearchParams): Promise<Transaction[] | undefined> {
   const params = new URLSearchParams({
     toDate: toDate ?? formatDate(new Date()) ?? "",
@@ -47,9 +52,8 @@ async function leSearch({ tagged, fromDate, toDate, description }: SearchParams)
       throw new Error(`HTTP error! status: ${response.status}`);
     }
 
-    const data = await response.json();
-    console.log(data);
-    return data;
+    const data: TransactionsResp = await response.json();
+    return data.txns;
   } catch (error) {
     console.error("Error fetching data:", error);
     // Handle errors appropriately, e.g., display an error message to the user
@@ -65,6 +69,7 @@ export default function Home() {
   );
   const [toDate, setToDate] = useState<Date | undefined>(new Date());
   const [description, setDescription] = useState<string>("");
+  const [transactions, setTransactions] = useState<Transaction[]>(new Array());
 
   const handleSearch = useDebouncedCallback(async () => {
     console.log("Performing search with:", {
@@ -73,12 +78,15 @@ export default function Home() {
       toDate: toDate?.toISOString(),
       description,
     });
-    await leSearch({
+    const fetchedTransactions = await leSearch({
       tagged,
       fromDate: formatDate(fromDate),
       toDate: formatDate(toDate),
       description
     });
+    if (fetchedTransactions != undefined) {
+      setTransactions(fetchedTransactions);
+    }
   }, 300);
   useEffect(() => {
     handleSearch();
