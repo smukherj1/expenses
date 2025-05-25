@@ -36,6 +36,7 @@ async function leSearch({ tagged, fromDate, toDate, description }: SearchParams)
   const params = new URLSearchParams({
     toDate: toDate ?? formatDate(new Date()) ?? "",
     fromDate: fromDate ?? "1970/01/01",
+    description: description,
     limit: "20",
   }).toString();
 
@@ -63,6 +64,8 @@ async function leSearch({ tagged, fromDate, toDate, description }: SearchParams)
 
 
 export default function Home() {
+  return <>Welcome to Le Expenses Explora</>
+  /*
   const [tagged, setTagged] = useState<"yes" | "no">("no");
   const [fromDate, setFromDate] = useState<Date | undefined>(
     new Date("1970-01-01")
@@ -85,7 +88,10 @@ export default function Home() {
       description
     });
     if (fetchedTransactions != undefined) {
+      console.log(`Fetched ${fetchedTransactions.length} transactions`);
       setTransactions(fetchedTransactions);
+    } else {
+      setTransactions(new Array());
     }
   }, 300);
   useEffect(() => {
@@ -116,4 +122,5 @@ export default function Home() {
       </TabsContent>
     </Tabs>
   </>;
+  */
 }

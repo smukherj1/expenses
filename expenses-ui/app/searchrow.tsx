@@ -127,7 +127,7 @@ export function SearchRow({
                     id="description-input"
                     placeholder="Enter description"
                     value={description} // Bind to prop
-                    onChange={(e) => onDescriptionChange(e.target.value)} // Call prop function
+                    onChange={(e) => onDescriptionChange(e.target.value.toLowerCase().trim())} // Call prop function
                     className="w-full"
                 />
             </div>
