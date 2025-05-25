@@ -21,11 +21,9 @@ export default function NavMenu() {
         <NavigationMenuList>
             {links.map((link) => {
                 return <NavigationMenuItem key={link.href}>
-                    <Link href={link.href} passHref>
-                        <NavigationMenuLink className={cn(navigationMenuTriggerStyle(), curPath == link.href && "bg-accent text-accent-foreground")}>
-                            {link.name}
-                        </NavigationMenuLink>
-                    </Link>
+                    <NavigationMenuLink asChild className={cn(navigationMenuTriggerStyle(), curPath == link.href && "bg-accent text-accent-foreground")}>
+                        <Link href={link.href}>{link.name}</Link>
+                    </NavigationMenuLink>
                 </NavigationMenuItem>;
             })}
         </NavigationMenuList>
