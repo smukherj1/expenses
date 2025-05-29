@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react"; // No longer need useState here
+import React, { useState, useEffect, use } from "react";
 import { format } from "date-fns";
 import { Calendar as CalendarIcon } from "lucide-react";
 
@@ -21,38 +21,61 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useDebouncedCallback } from 'use-debounce';
+import { usePathname, useRouter } from 'next/navigation';
+import { formatDate } from "../utils";
 
-// Define the props interface for SearchRow
-interface SearchRowProps {
-    tagged: "yes" | "no";
-    onTaggedChange: (value: "yes" | "no") => void;
-    fromDate: Date | undefined;
-    onFromDateChange: (date: Date | undefined) => void;
-    toDate: Date | undefined;
-    onToDateChange: (date: Date | undefined) => void;
-    description: string;
-    onDescriptionChange: (value: string) => void;
-}
+export interface SearchParams {
+    tagged: string
+    fromDate: string | undefined
+    toDate: string | undefined
+    description: string
+};
 
 // Update the function signature to accept props
-export function SearchRow({
-    tagged,
-    onTaggedChange,
-    fromDate,
-    onFromDateChange,
-    toDate,
-    onToDateChange,
-    description,
-    onDescriptionChange,
-}: SearchRowProps) {
+export function SearchRow() {
+    const [tagged, setTagged] = useState<string>("no");
+    const [fromDate, setFromDate] = useState<Date | undefined>(
+        new Date("2014-01-01")
+    );
+    const [toDate, setToDate] = useState<Date | undefined>(new Date());
+    const [description, setDescription] = useState<string>("");
+    const { replace } = useRouter();
+    const pathname = usePathname();
+
+    function searchParams(): string {
+        const params = new URLSearchParams();
+        if (tagged.length > 0) {
+            params.set('tagged', tagged);
+        }
+        if (fromDate != undefined) {
+            params.set('fromDate', formatDate(fromDate));
+        }
+        if (toDate != undefined) {
+            params.set('toDate', formatDate(toDate));
+        }
+        if (description.length > 0) {
+            params.set('description', description);
+        }
+        return `${params.toString()}`;
+    }
+    const debouncedSearch = useDebouncedCallback(() => {
+        const sp = searchParams();
+        replace(`${pathname}?${sp}`);
+    }, 300);
+    useEffect(() => {
+        debouncedSearch();
+    },
+        [tagged, fromDate, toDate, description]
+    );
     return (
         <div className="flex flex-col sm:flex-row items-center space-y-4 sm:space-y-0 sm:space-x-4 p-4 bg-gray-50 rounded-lg shadow-sm">
             {/* Tagged Selection Menu */}
             <div className="flex flex-col space-y-1 w-full sm:w-auto">
                 <Label htmlFor="tagged-select">Tagged</Label>
                 <Select
-                    value={tagged} // Bind to prop
-                    onValueChange={onTaggedChange} // Call prop function
+                    value={tagged}
+                    onValueChange={setTagged}
                 >
                     <SelectTrigger id="tagged-select" className="w-full sm:w-[180px]">
                         <SelectValue placeholder="Select" />
@@ -84,8 +107,8 @@ export function SearchRow({
                     <PopoverContent className="w-auto p-0">
                         <Calendar
                             mode="single"
-                            selected={fromDate} // Bind to prop
-                            onSelect={onFromDateChange} // Call prop function
+                            selected={fromDate}
+                            onSelect={setFromDate}
                             initialFocus
                         />
                     </PopoverContent>
@@ -112,8 +135,8 @@ export function SearchRow({
                     <PopoverContent className="w-auto p-0">
                         <Calendar
                             mode="single"
-                            selected={toDate} // Bind to prop
-                            onSelect={onToDateChange} // Call prop function
+                            selected={toDate}
+                            onSelect={setToDate}
                             initialFocus
                         />
                     </PopoverContent>
@@ -127,7 +150,7 @@ export function SearchRow({
                     id="description-input"
                     placeholder="Enter description"
                     value={description} // Bind to prop
-                    onChange={(e) => onDescriptionChange(e.target.value.toLowerCase().trim())} // Call prop function
+                    onChange={(e) => setDescription(e.target.value.toLowerCase().trim())}
                     className="w-full"
                 />
             </div>

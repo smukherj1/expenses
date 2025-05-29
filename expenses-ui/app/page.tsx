@@ -2,10 +2,8 @@
 
 import React, { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { transactionColumns } from "./transactions/columns"
-import { Transaction } from "./transactions/data"
-import { TransactionsTable } from "./transactions/transactions-table"
-import { SearchRow } from "./searchrow"
+import { TransactionsTable, Transaction } from "./transactions-table"
+import { SearchRow } from "./edit/searchrow"
 import { useDebouncedCallback } from 'use-debounce';
 
 // Format date as yyyy/mm/dd.
@@ -20,47 +18,7 @@ function formatDate(date: Date | undefined): string | undefined {
   return `${year}/${month}/${day}`;
 }
 
-interface SearchParams {
-  tagged: "yes" | "no"
-  fromDate: string | undefined
-  toDate: string | undefined
-  description: string
-};
 
-interface TransactionsResp {
-  nextId: string,
-  txns: Transaction[],
-}
-
-async function leSearch({ tagged, fromDate, toDate, description }: SearchParams): Promise<Transaction[] | undefined> {
-  const params = new URLSearchParams({
-    toDate: toDate ?? formatDate(new Date()) ?? "",
-    fromDate: fromDate ?? "1970/01/01",
-    description: description,
-    limit: "20",
-  }).toString();
-
-  const url = `http://localhost:4000/txns?${params}`;
-  try {
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const data: TransactionsResp = await response.json();
-    return data.txns;
-  } catch (error) {
-    console.error("Error fetching data:", error);
-    // Handle errors appropriately, e.g., display an error message to the user
-  }
-  return;
-}
 
 
 export default function Home() {

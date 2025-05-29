@@ -459,6 +459,7 @@ func main() {
 
 	r := chi.NewRouter()
 	r.Use(middleware.Timeout(60 * time.Second))
+	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	for k, v := range commonHeaders {
 		r.Use(middleware.SetHeader(k, v))

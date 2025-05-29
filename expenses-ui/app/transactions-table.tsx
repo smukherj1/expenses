@@ -1,5 +1,4 @@
-"use client"
-
+"use client";
 import {
     ColumnDef,
     flexRender,
@@ -16,18 +15,24 @@ import {
     TableRow,
 } from "@/components/ui/table"
 
-interface DataTableProps<TData, TValue> {
-    columns: ColumnDef<TData, TValue>[]
-    data: TData[]
+export type Transaction = {
+    id: number
+    date: Date
+    description: string
+    amount: string
+    source: string
+    tags: string[]
 }
 
-export function TransactionsTable<TData, TValue>({
-    columns,
-    data
-}: DataTableProps<TData, TValue>) {
+interface TransactionTableProps {
+    data: Transaction[]
+}
+
+export function TransactionsTable(
+    { data }: TransactionTableProps) {
     const table = useReactTable({
         data,
-        columns,
+        columns: transactionColumns,
         getCoreRowModel: getCoreRowModel(),
     })
 
@@ -68,7 +73,7 @@ export function TransactionsTable<TData, TValue>({
                         ))
                     ) : (
                         <TableRow>
-                            <TableCell colSpan={columns.length} className="h-24 text-center">
+                            <TableCell colSpan={transactionColumns.length} className="h-24 text-center">
                                 No results.
                             </TableCell>
                         </TableRow>
@@ -78,3 +83,42 @@ export function TransactionsTable<TData, TValue>({
         </div>
     )
 }
+
+const transactionColumns: ColumnDef<Transaction>[] = [
+    {
+        accessorKey: "date",
+        header: "Date",
+        cell: ({ row }) => {
+            const date = new Date(row.getValue("date"));
+            let year = new Intl.DateTimeFormat('en', { year: 'numeric' }).format(date);
+            let month = new Intl.DateTimeFormat('en', { month: 'short' }).format(date);
+            let day = new Intl.DateTimeFormat('en', { day: '2-digit' }).format(date);
+            return <>{`${day}-${month}-${year}`}</>
+        },
+    },
+    {
+        accessorKey: "description",
+        header: "Description",
+    },
+    {
+        accessorKey: "amount",
+        header: "Amount",
+        cell: ({ row }) => {
+            const amount = parseFloat(row.getValue("amount"))
+            const formatted = new Intl.NumberFormat("en-US", {
+                style: "currency",
+                currency: "usd",
+            }).format(amount)
+
+            return <>{formatted}</>
+        },
+    },
+    {
+        accessorKey: "source",
+        header: "Source",
+    },
+    //{
+    //    accessorKey: "tags",
+    //    header: "Tags",
+    //},
+]
