@@ -35,7 +35,7 @@ export type Transaction = z.infer<typeof TransactionSchema>;
 
 const TransactionsRespSchema = z.object({
     nextId: z.string(),
-    txns: z.array(TransactionSchema),
+    txns: z.array(TransactionSchema).optional().default(new Array()),
 });
 
 export async function FetchTransactions({ tagged, fromDate, toDate, description }: {
