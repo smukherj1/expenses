@@ -1,5 +1,5 @@
 import { SearchRow, SearchParams } from "./searchrow"
-import { Transaction, TransactionSchema, TransactionsTable } from "../transactions";
+import { Transaction, TransactionSchema, TransactionsTable } from "@/components/internal/transactions";
 import { z } from 'zod';
 
 // Zod schema for the entire TransactionsResp
