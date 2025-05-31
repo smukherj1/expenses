@@ -1,3 +1,4 @@
+"use client";
 import {
     Table,
     TableBody,
@@ -5,42 +6,9 @@ import {
     TableHead,
     TableHeader,
     TableRow,
-} from "@/components/ui/table"
-import { z } from 'zod';
-
-// Zod schema for a single Transaction
-export const TransactionSchema = z.object({
-    id: z.string().optional().default(""),
-    // Custom transform for the date string "yyyy/mm/dd" to a Date object
-    date: z.string().transform((str, ctx) => {
-        const parts = str.split('/');
-        if (parts.length === 3) {
-            const year = parseInt(parts[0], 10);
-            const month = parseInt(parts[1], 10) - 1; // Month is 0-indexed
-            const day = parseInt(parts[2], 10);
-            const date = new Date(year, month, day);
-            // Basic validation for a valid date
-            if (isNaN(date.getTime())) {
-                ctx.addIssue({
-                    code: z.ZodIssueCode.custom,
-                    message: 'Invalid date format. Expected yy/mm/dd',
-                });
-                return z.NEVER;
-            }
-            return date;
-        }
-        ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            message: 'Invalid date format. Expected yy/mm/dd',
-        });
-        return z.NEVER;
-    }).optional().default(""),
-    description: z.string().optional().default(""),
-    amount: z.string().optional().default(""),
-    source: z.string().optional().default(""),
-    tags: z.array(z.string()).optional().default([]),
-});
-export type Transaction = z.infer<typeof TransactionSchema>;
+} from "@/components/ui/table";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Transaction } from "@/lib/transactions";
 
 function formatDate(date: Date): string {
     const month = date.getMonth() + 1; // getMonth() returns 0-indexed month
@@ -61,6 +29,9 @@ export function TransactionsTable({ data }: Props) {
             <Table>
                 <TableHeader>
                     <TableRow>
+                        <TableHead>
+                            <Checkbox aria-label="Chukudu" />
+                        </TableHead>
                         <TableHead>Date</TableHead>
                         <TableHead>Description</TableHead>
                         <TableHead>Amount</TableHead>
@@ -71,6 +42,7 @@ export function TransactionsTable({ data }: Props) {
                 <TableBody>
                     {data.map((tx) => (
                         <TableRow key={tx.id}>
+                            <TableCell><Checkbox /></TableCell>
                             <TableCell>{formatDate(tx.date)}</TableCell>
                             <TableCell>{tx.description}</TableCell>
                             <TableCell>{tx.amount}</TableCell>

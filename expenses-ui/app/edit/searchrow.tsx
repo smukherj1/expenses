@@ -25,13 +25,6 @@ import { useDebouncedCallback } from 'use-debounce';
 import { usePathname, useRouter } from 'next/navigation';
 import { formatDate } from "../utils";
 
-export interface SearchParams {
-    tagged: string
-    fromDate: string | undefined
-    toDate: string | undefined
-    description: string
-};
-
 // Update the function signature to accept props
 export function SearchRow() {
     const [tagged, setTagged] = useState<string>("no");
