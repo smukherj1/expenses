@@ -1,11 +1,14 @@
 import { SearchRow, SearchParams } from "./searchrow"
-import Transactions from "./transactions";
-import { Transaction } from "../transactions-table";
+import { Transaction, TransactionSchema, TransactionsTable } from "../transactions";
+import { z } from 'zod';
 
-interface TransactionsResp {
-    nextId: string,
-    txns: Transaction[],
-}
+// Zod schema for the entire TransactionsResp
+const TransactionsRespSchema = z.object({
+    nextId: z.string(),
+    txns: z.array(TransactionSchema),
+});
+
+type TransactionsResp = z.infer<typeof TransactionsRespSchema>;
 
 async function doSearch({ tagged, fromDate, toDate, description }: SearchParams): Promise<Transaction[]> {
     let params = new URLSearchParams({
@@ -31,16 +34,18 @@ async function doSearch({ tagged, fromDate, toDate, description }: SearchParams)
         });
 
         if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+            throw new Error(`HTTP error! Response: ${response.status} ${await response.text()}`);
         }
 
-        const data: TransactionsResp = await response.json();
-        return data.txns;
+        const json = await response.json();
+        const result = TransactionsRespSchema.safeParse(json);
+        if (!result.success) {
+            throw new Error(`Zod validation errors ${result.error.toString()}`);
+        }
+        return result.data.txns;
     } catch (error) {
-        console.error("Error fetching data:", error);
-        // Handle errors appropriately, e.g., display an error message to the user
+        throw new Error(`Error fetching data ${error}`);
     }
-    return new Array();
 }
 
 
@@ -62,5 +67,5 @@ export default async function EditPage({ searchParams }: EditPageProps) {
         toDate: toDate,
         description: description ?? ""
     });
-    return <><SearchRow /><Transactions data={fetchedTransactions} /></>
+    return <><SearchRow /><TransactionsTable data={fetchedTransactions} /></>
 }
