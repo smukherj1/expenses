@@ -19,6 +19,15 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
+import {
+    Card,
+    CardAction,
+    CardContent,
+    CardDescription,
+    CardFooter,
+    CardHeader,
+    CardTitle,
+} from "@/components/ui/card"
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useDebouncedCallback } from 'use-debounce';
@@ -27,20 +36,18 @@ import { formatDate } from "../utils";
 
 // Update the function signature to accept props
 export function SearchRow() {
-    const [tagged, setTagged] = useState<string>("no");
     const [fromDate, setFromDate] = useState<Date | undefined>(
         new Date("2014-01-01")
     );
     const [toDate, setToDate] = useState<Date | undefined>(new Date());
     const [description, setDescription] = useState<string>("");
+    const [source, setSource] = useState<string>("");
+    const [tags, setTags] = useState<string>("");
     const { replace } = useRouter();
     const pathname = usePathname();
 
     function searchParams(): string {
         const params = new URLSearchParams();
-        if (tagged.length > 0) {
-            params.set('tagged', tagged);
-        }
         if (fromDate != undefined) {
             params.set('fromDate', formatDate(fromDate));
         }
@@ -49,6 +56,12 @@ export function SearchRow() {
         }
         if (description.length > 0) {
             params.set('description', description);
+        }
+        if (source.length > 0) {
+            params.set('source', source);
+        }
+        if (tags.length > 0) {
+            params.set('tags', tags);
         }
         return `${params.toString()}`;
     }
@@ -59,94 +72,106 @@ export function SearchRow() {
     useEffect(() => {
         debouncedSearch();
     },
-        [tagged, fromDate, toDate, description]
+        [fromDate, toDate, description, source, tags]
     );
     return (
-        <div className="flex flex-col sm:flex-row items-center space-y-4 sm:space-y-0 sm:space-x-4 p-4 bg-gray-50 rounded-lg shadow-sm">
-            {/* Tagged Selection Menu */}
-            <div className="flex flex-col space-y-1 w-full sm:w-auto">
-                <Label htmlFor="tagged-select">Tagged</Label>
-                <Select
-                    value={tagged}
-                    onValueChange={setTagged}
-                >
-                    <SelectTrigger id="tagged-select" className="w-full sm:w-[180px]">
-                        <SelectValue placeholder="Select" />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="yes">Yes</SelectItem>
-                        <SelectItem value="no">No</SelectItem>
-                    </SelectContent>
-                </Select>
-            </div>
+        <Card className="gap-1 py-3 bg-gray-50 shadow-sm">
+            <CardHeader>
+                <CardTitle>Search for transactions</CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col sm:flex-row items-center space-y-4 sm:space-y-0 sm:space-x-4 p-2 rounded-lg">
+                {/* From Date Selector */}
+                <div className="flex flex-col space-y-1 w-full sm:w-auto">
+                    <Label htmlFor="from-date-picker">From</Label>
+                    <Popover>
+                        <PopoverTrigger asChild>
+                            <Button
+                                id="from-date-picker"
+                                variant={"outline"}
+                                className={cn(
+                                    "w-full sm:w-[240px] justify-start text-left font-normal",
+                                    !fromDate && "text-muted-foreground"
+                                )}
+                            >
+                                <CalendarIcon className="mr-2 h-4 w-4" />
+                                {fromDate ? format(fromDate, "PPP") : <span>Pick a date</span>}
+                            </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0">
+                            <Calendar
+                                mode="single"
+                                selected={fromDate}
+                                onSelect={setFromDate}
+                                initialFocus
+                            />
+                        </PopoverContent>
+                    </Popover>
+                </div>
 
-            {/* From Date Selector */}
-            <div className="flex flex-col space-y-1 w-full sm:w-auto">
-                <Label htmlFor="from-date-picker">From</Label>
-                <Popover>
-                    <PopoverTrigger asChild>
-                        <Button
-                            id="from-date-picker"
-                            variant={"outline"}
-                            className={cn(
-                                "w-full sm:w-[240px] justify-start text-left font-normal",
-                                !fromDate && "text-muted-foreground"
-                            )}
-                        >
-                            <CalendarIcon className="mr-2 h-4 w-4" />
-                            {fromDate ? format(fromDate, "PPP") : <span>Pick a date</span>}
-                        </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0">
-                        <Calendar
-                            mode="single"
-                            selected={fromDate}
-                            onSelect={setFromDate}
-                            initialFocus
-                        />
-                    </PopoverContent>
-                </Popover>
-            </div>
+                {/* To Date Selector */}
+                <div className="flex flex-col space-y-1 w-full sm:w-auto">
+                    <Label htmlFor="to-date-picker">To</Label>
+                    <Popover>
+                        <PopoverTrigger asChild>
+                            <Button
+                                id="to-date-picker"
+                                variant={"outline"}
+                                className={cn(
+                                    "w-full sm:w-[240px] justify-start text-left font-normal",
+                                    !toDate && "text-muted-foreground"
+                                )}
+                            >
+                                <CalendarIcon className="mr-2 h-4 w-4" />
+                                {toDate ? format(toDate, "PPP") : <span>Pick a date</span>}
+                            </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0">
+                            <Calendar
+                                mode="single"
+                                selected={toDate}
+                                onSelect={setToDate}
+                                initialFocus
+                            />
+                        </PopoverContent>
+                    </Popover>
+                </div>
 
-            {/* To Date Selector */}
-            <div className="flex flex-col space-y-1 w-full sm:w-auto">
-                <Label htmlFor="to-date-picker">To</Label>
-                <Popover>
-                    <PopoverTrigger asChild>
-                        <Button
-                            id="to-date-picker"
-                            variant={"outline"}
-                            className={cn(
-                                "w-full sm:w-[240px] justify-start text-left font-normal",
-                                !toDate && "text-muted-foreground"
-                            )}
-                        >
-                            <CalendarIcon className="mr-2 h-4 w-4" />
-                            {toDate ? format(toDate, "PPP") : <span>Pick a date</span>}
-                        </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0">
-                        <Calendar
-                            mode="single"
-                            selected={toDate}
-                            onSelect={setToDate}
-                            initialFocus
-                        />
-                    </PopoverContent>
-                </Popover>
-            </div>
-
-            {/* Description Free Text Input */}
-            <div className="flex flex-col space-y-1 w-full flex-grow">
-                <Label htmlFor="description-input">Description</Label>
-                <Input
-                    id="description-input"
-                    placeholder="Enter description"
-                    value={description} // Bind to prop
-                    onChange={(e) => setDescription(e.target.value.toLowerCase().trim())}
-                    className="w-full"
-                />
-            </div>
-        </div>
+                {/* Description Free Text Input */}
+                <div className="flex flex-col space-y-1 w-full flex-grow">
+                    <Label htmlFor="description-input">Description</Label>
+                    <Input
+                        id="description-input"
+                        placeholder="Enter description"
+                        value={description} // Bind to prop
+                        onChange={(e) => setDescription(e.target.value)}
+                        className="w-full"
+                    />
+                </div>
+                {/* Source Free Text Input */}
+                <div className="flex flex-col space-y-1 w-full flex-grow">
+                    <Label htmlFor="source-input">Source</Label>
+                    <Input
+                        id="source-input"
+                        placeholder="Enter source"
+                        value={source} // Bind to prop
+                        onChange={(e) => setSource(e.target.value)}
+                        className="w-full"
+                    />
+                </div>
+                {/* Tags Free Text Input */}
+                <div className="flex flex-col space-y-1 w-full flex-grow">
+                    <Label htmlFor="tags-input">Tags</Label>
+                    <Input
+                        id="tags-input"
+                        placeholder="Enter tags"
+                        value={tags} // Bind to prop
+                        onChange={(e) => setTags(e.target.value)}
+                        className="w-full"
+                    />
+                </div>
+                {/* Edit Button */}
+                <Button className="flex self-end">Edit</Button>
+            </CardContent>
+        </Card>
     );
 }

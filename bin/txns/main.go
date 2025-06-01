@@ -259,6 +259,7 @@ func (s *txnsServer) get(w http.ResponseWriter, r *http.Request) {
 	desc := r.URL.Query().Get("description")
 	amount := r.URL.Query().Get("amount")
 	source := r.URL.Query().Get("source")
+	tagsStr := r.URL.Query().Get("tags")
 	startIDStr := r.URL.Query().Get("startId")
 	limitStr := r.URL.Query().Get("limit")
 	var fromDate, toDate *time.Time
@@ -277,6 +278,10 @@ func (s *txnsServer) get(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		toDate = &d
+	}
+	var tags []string
+	if tagsStr != "" {
+		tags = strings.Split(tagsStr, " ")
 	}
 	var startID, limit int64
 	if startIDStr != "" {
@@ -309,6 +314,7 @@ func (s *txnsServer) get(w http.ResponseWriter, r *http.Request) {
 		Description: desc,
 		Amount:      amount,
 		Source:      source,
+		Tags:        tags,
 	}, opts...)
 	if err != nil {
 		respondf(w, code, "invalid query parameter(s): %v", err)
@@ -328,6 +334,9 @@ func (s *txnsServer) get(w http.ResponseWriter, r *http.Request) {
 	}
 	if source != "" {
 		tq.Source = &vtxn.source
+	}
+	if tags != nil {
+		tq.Tags = &tags
 	}
 	txns, err := s.db.QueryTxns(r.Context(), &tq)
 	if err != nil {

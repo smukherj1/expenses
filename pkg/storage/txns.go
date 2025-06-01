@@ -92,6 +92,7 @@ type TxnQuery struct {
 	Description *string
 	AmountCents *int64
 	Source      *string
+	Tags        *[]string
 	StartID     int64
 	Limit       int64
 }
@@ -115,6 +116,11 @@ func (tq *TxnQuery) validate() error {
 		}
 		if !srcRegexp.MatchString(*tq.Source) {
 			return fmt.Errorf("source had invalid characters, got '%v', only alphanumeric, spaces, hyphens and dashes are allowed", *tq.Source)
+		}
+	}
+	if tq.Tags != nil {
+		if err := validateTags(*tq.Tags); err != nil {
+			return fmt.Errorf("error validating tags: %w", err)
 		}
 	}
 	if tq.Limit < 0 || tq.Limit > 1000 {
@@ -254,14 +260,19 @@ FROM TRANSACTIONS WHERE `
 		qArgs = append(qArgs, "%"+*tq.Description+"%")
 	}
 	if tq.Source != nil {
-		clauses = append(clauses, fmt.Sprint("SOURCE = $", qCounter))
+		clauses = append(clauses, fmt.Sprint("SOURCE ILIKE $", qCounter))
 		qCounter += 1
-		qArgs = append(qArgs, *tq.Source)
+		qArgs = append(qArgs, "%"+*tq.Source+"%")
 	}
 	if tq.AmountCents != nil {
 		clauses = append(clauses, fmt.Sprint("AMOUNT_CENTS = $", qCounter))
 		qCounter += 1
 		qArgs = append(qArgs, *tq.AmountCents)
+	}
+	if tq.Tags != nil {
+		clauses = append(clauses, fmt.Sprint("TAGS = $", qCounter))
+		qCounter += 1
+		qArgs = append(qArgs, pq.Array(*tq.Tags))
 	}
 	q += strings.Join(clauses, " AND ")
 	q += fmt.Sprint(" ORDER BY ID ASC LIMIT ", tq.Limit)

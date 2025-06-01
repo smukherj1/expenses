@@ -26,28 +26,29 @@ type Props = {
 
 export function TransactionsTable({ data }: Props) {
     const [selectedIDs, setSelectedIDs] = useState<Set<string>>(new Set());
-    const onTxnSelect = (id: string, checked: boolean) => {
+    const onTxnClick = (id: string) => {
         const newSelectedIDs = new Set(selectedIDs);
-        if (checked) {
+        const select = !selectedIDs.has(id);
+        if (select) {
             newSelectedIDs.add(id);
         } else {
             newSelectedIDs.delete(id);
         }
         setSelectedIDs(newSelectedIDs);
     }
-    const onAllTxnsSelect = (checked: boolean) => {
-        const newSelectedIDs = new Set(data.filter(() => checked).map((txn: Transaction) => txn.id));
+    const onAllTxnsClick = () => {
+        const selectAll = !(selectedIDs.size == data.length && data.length > 0);
+        const newSelectedIDs = new Set(data.filter(() => selectAll).map((txn: Transaction) => txn.id));
         setSelectedIDs(newSelectedIDs);
     }
     return (
         <div className="w-full overflow-x-auto">
             <Table>
                 <TableHeader>
-                    <TableRow>
+                    <TableRow onClick={() => onAllTxnsClick()}>
                         <TableHead>
                             <Checkbox
                                 checked={selectedIDs.size == data.length && data.length > 0}
-                                onCheckedChange={(checked) => { onAllTxnsSelect(checked.valueOf() === true) }}
                                 aria-label="Chukudu" />
                         </TableHead>
                         <TableHead>Date</TableHead>
@@ -59,11 +60,10 @@ export function TransactionsTable({ data }: Props) {
                 </TableHeader>
                 <TableBody>
                     {data.map((tx) => (
-                        <TableRow key={tx.id}>
+                        <TableRow key={tx.id} onClick={() => onTxnClick(tx.id)}>
                             <TableCell>
                                 <Checkbox
                                     checked={selectedIDs.has(tx.id)}
-                                    onCheckedChange={(checked) => onTxnSelect(tx.id, checked.valueOf() === true)}
                                 />
                             </TableCell>
                             <TableCell>{formatDate(tx.date)}</TableCell>
