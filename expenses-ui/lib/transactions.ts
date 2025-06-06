@@ -85,6 +85,9 @@ export async function FetchTransactions({ fromDate, toDate, description, source,
         if (!result.success) {
             throw new Error(`Zod validation errors ${result.error.toString()}`);
         }
+        result.data.txns.forEach((txn: Transaction, index: number) => {
+            console.log(`txn[${index}] id=${txn.id}, date=${txn.date}, ${txn.description}, ${txn.amount}, tags=${txn.tags}`)
+        });
         return result.data.txns;
     } catch (error) {
         throw new Error(`Error fetching data ${error}`);

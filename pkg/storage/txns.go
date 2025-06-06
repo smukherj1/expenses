@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"regexp"
 	"strings"
 	"time"
@@ -14,6 +15,7 @@ import (
 )
 
 const (
+	MaxIDs       = 1000
 	DescLimit    = 100
 	SourceLimit  = 100
 	DescEmbedLen = 768
@@ -196,10 +198,21 @@ type TxnUpdates struct {
 	DescEmbedding *string
 }
 
-func (s *Storage) UpdateTxn(ctx context.Context, id int64, tu *TxnUpdates) (bool, error) {
+func int64sToStrs(is []int64) []string {
+	var s []string
+	for _, i := range is {
+		s = append(s, fmt.Sprint(i))
+	}
+	return s
+}
+
+func (s *Storage) UpdateTxns(ctx context.Context, ids []int64, tu *TxnUpdates) (bool, error) {
 	var defaultUpdates TxnUpdates
 	if tu == nil || *tu == defaultUpdates {
-		return false, nil
+		return false, fmt.Errorf("no fields were requested to be updated for the given transaction IDs")
+	}
+	if len(ids) < 1 {
+		return false, fmt.Errorf("ids must be specified")
 	}
 	q := `UPDATE TRANSACTIONS SET `
 	vCounter := 1
@@ -207,22 +220,30 @@ func (s *Storage) UpdateTxn(ctx context.Context, id int64, tu *TxnUpdates) (bool
 	var vals []any
 	if tu.Tags != nil {
 		if err := validateTags(*tu.Tags); err != nil {
-			return false, fmt.Errorf("unable to update txn %v with invalid tags: %w", id, err)
+			return false, fmt.Errorf("unable to update txns with invalid tags: %w", err)
 		}
-		assigns = append(assigns, fmt.Sprint("TAGS = $", vCounter))
-		vals = append(vals, pq.Array(*tu.Tags))
-		vCounter += 1
+		if len(*tu.Tags) == 0 {
+			assigns = append(assigns, "TAGS = NULL")
+		} else {
+			assigns = append(assigns, fmt.Sprint("TAGS = $", vCounter))
+			vals = append(vals, pq.Array(*tu.Tags))
+			vCounter += 1
+		}
 	}
 	if tu.DescEmbedding != nil {
+		if len(ids) != 1 {
+			return false, fmt.Errorf("can't update embedding, got %v ids, want 1", len(ids))
+		}
 		if err := validateDescEmbedding(*tu.DescEmbedding); err != nil {
-			return false, fmt.Errorf("unable to update txn %v with invalid description embedding: %w", id, err)
+			return false, fmt.Errorf("unable to update txn %v with invalid description embedding: %w", ids[0], err)
 		}
 		assigns = append(assigns, fmt.Sprint("DESC_EMBEDDING = $", vCounter))
 		vals = append(vals, *tu.DescEmbedding)
 		vCounter += 1
 	}
 	q += strings.Join(assigns, ", ")
-	q += fmt.Sprint(" WHERE ID = ", id)
+	q += fmt.Sprintf(" WHERE ID IN (%v)", strings.Join(int64sToStrs(ids), ", "))
+	log.Printf("UpdateTxns SQL: '%v'", q)
 	rows, err := s.db.QueryContext(ctx, q, vals...)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil

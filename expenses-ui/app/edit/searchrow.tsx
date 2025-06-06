@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, use } from "react";
+import React, { useState, useEffect } from "react";
 import { format } from "date-fns";
 import { Calendar as CalendarIcon } from "lucide-react";
 
@@ -13,18 +13,18 @@ import {
     PopoverTrigger,
 } from "@/components/ui/popover";
 import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from "@/components/ui/select";
+    Dialog,
+    DialogClose,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+    DialogTrigger,
+} from "@/components/ui/dialog"
 import {
     Card,
-    CardAction,
     CardContent,
-    CardDescription,
-    CardFooter,
     CardHeader,
     CardTitle,
 } from "@/components/ui/card"
@@ -33,6 +33,7 @@ import { Label } from "@/components/ui/label";
 import { useDebouncedCallback } from 'use-debounce';
 import { usePathname, useRouter } from 'next/navigation';
 import { formatDate } from "../utils";
+import EditDialog from "./edit-dialog";
 
 // Update the function signature to accept props
 export function SearchRow() {
@@ -170,7 +171,19 @@ export function SearchRow() {
                     />
                 </div>
                 {/* Edit Button */}
-                <Button className="flex self-end">Edit</Button>
+                <Dialog>
+                    <DialogTrigger asChild>
+                        <Button className="flex self-end">Edit</Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                        <DialogHeader>
+                            <DialogTitle>New Tags</DialogTitle>
+                            <DialogDescription>Enter new tags to set for selected transactions</DialogDescription>
+                        </DialogHeader>
+                        {/* Tags Free Text Input */}
+                        <EditDialog tags={tags} />
+                    </DialogContent>
+                </Dialog>
             </CardContent>
         </Card>
     );

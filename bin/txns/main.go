@@ -371,6 +371,7 @@ func txnsStorageToResp(sts []storage.Txn) txnsResp {
 			Description: s.Description,
 			Amount:      fmt.Sprintf("%v.%v", s.AmountCents/100, cents),
 			Source:      s.Source,
+			Tags:        s.Tags,
 		})
 	}
 	result.NextID = fmt.Sprint(nextID)
@@ -408,8 +409,9 @@ func (s *txnsServer) getByID(w http.ResponseWriter, r *http.Request) {
 }
 
 type patchTxn struct {
-	ID            string   `json:"id,omitempty"`
+	IDs           []int64  `json:"ids,omitempty"`
 	Tags          []string `json:"tags,omitempty"`
+	ClearTags     bool     `json:"clearTags,omitempty"`
 	DescEmbedding string   `json:"desc_embedding,omitempty"`
 }
 
@@ -424,12 +426,23 @@ func (s *txnsServer) patch(w http.ResponseWriter, r *http.Request) {
 		respondf(w, http.StatusBadRequest, "error parsing body as a JSON transaction: %v", err)
 		return
 	}
+	if len(ptx.IDs) == 0 {
+		respondf(w, http.StatusBadRequest, "got 0 txn IDs to update, want >= 1")
+		return
+	}
+	if len(ptx.IDs) > storage.MaxIDs {
+		respondf(w, http.StatusBadRequest, "too many IDs in request, got %v, want <= %v", len(ptx.IDs), storage.MaxIDs)
+		return
+	}
+	if len(ptx.Tags) > 0 && ptx.ClearTags {
+		respondf(w, http.StatusBadRequest, "clearTags can't be set in request when tags is set")
+		return
+	}
 	tx := txn{
-		ID:            ptx.ID,
 		Tags:          ptx.Tags,
 		DescEmbedding: ptx.DescEmbedding,
 	}
-	vopts := []validateTxnOption{skipDate(), skipDescription(), skipAmount(), skipSource()}
+	vopts := []validateTxnOption{skipID(), skipDate(), skipDescription(), skipAmount(), skipSource()}
 	if len(ptx.DescEmbedding) == 0 {
 		vopts = append(vopts, skipDescEmbedding())
 	}
@@ -442,14 +455,17 @@ func (s *txnsServer) patch(w http.ResponseWriter, r *http.Request) {
 	if len(vtx.tags) != 0 {
 		tu.Tags = &vtx.tags
 	}
+	if ptx.ClearTags {
+		tu.Tags = &[]string{}
+	}
 	if len(vtx.descEmbedding) != 0 {
 		tu.DescEmbedding = &vtx.descEmbedding
 	}
-	if ok, err := s.db.UpdateTxn(r.Context(), vtx.id, tu); err != nil {
+	if ok, err := s.db.UpdateTxns(r.Context(), ptx.IDs, tu); err != nil {
 		respondf(w, http.StatusInternalServerError, fmt.Sprintf("error patching txn %v: %v", vtx.id, err))
 		return
 	} else if !ok {
-		respondf(w, http.StatusNotFound, fmt.Sprintf("txn %v not found", vtx.id))
+		respondf(w, http.StatusNotFound, "no matching txns found")
 		return
 	}
 	respondf(w, http.StatusOK, "txn %v updated", vtx.id)

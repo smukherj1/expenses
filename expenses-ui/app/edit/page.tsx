@@ -1,7 +1,6 @@
 import { SearchRow } from "./searchrow"
 import { TransactionsTable } from "@/components/internal/transactions";
-import { FetchTransactions } from "@/lib/transactions";
-
+import { FetchTransactions, Transaction } from "@/lib/transactions";
 
 interface EditPageProps {
     searchParams: Promise<{
@@ -22,5 +21,8 @@ export default async function EditPage({ searchParams }: EditPageProps) {
         source: source ?? "",
         tags: tags ?? ""
     });
-    return <><SearchRow /><TransactionsTable data={fetchedTransactions} /></>
+    return (<>
+        <SearchRow />
+        <TransactionsTable data={fetchedTransactions} />
+    </>);
 }
