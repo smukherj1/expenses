@@ -14,10 +14,8 @@ import {
 } from "@/components/ui/popover";
 import {
     Dialog,
-    DialogClose,
     DialogContent,
     DialogDescription,
-    DialogFooter,
     DialogHeader,
     DialogTitle,
     DialogTrigger,
@@ -35,8 +33,11 @@ import { usePathname, useRouter } from 'next/navigation';
 import { formatDate } from "../utils";
 import EditDialog from "./edit-dialog";
 
-// Update the function signature to accept props
-export function SearchRow() {
+export type Props = {
+    txnIDs: string[]
+}
+
+export function EditPanel({ txnIDs }: Props) {
     const [fromDate, setFromDate] = useState<Date | undefined>(
         new Date("2014-01-01")
     );
@@ -173,15 +174,17 @@ export function SearchRow() {
                 {/* Edit Button */}
                 <Dialog>
                     <DialogTrigger asChild>
-                        <Button className="flex self-end">Edit</Button>
+                        <Button className="flex self-end" disabled={txnIDs.length === 0}>Edit</Button>
                     </DialogTrigger>
                     <DialogContent>
                         <DialogHeader>
-                            <DialogTitle>New Tags</DialogTitle>
-                            <DialogDescription>Enter new tags to set for selected transactions</DialogDescription>
+                            <DialogTitle>Request Tag Changes</DialogTitle>
+                            <DialogDescription>
+                                Add, remove or clear tags for the {txnIDs.length} selected transactions
+                            </DialogDescription>
                         </DialogHeader>
                         {/* Tags Free Text Input */}
-                        <EditDialog tags={tags} />
+                        <EditDialog txnIDs={txnIDs} tags={tags} />
                     </DialogContent>
                 </Dialog>
             </CardContent>

@@ -22,10 +22,11 @@ function formatDate(date: Date): string {
 
 type Props = {
     data: Transaction[]
+    selectedIDs: Set<string>
+    setSelectedIDs: (s: Set<string>) => void
 }
 
-export function TransactionsTable({ data }: Props) {
-    const [selectedIDs, setSelectedIDs] = useState<Set<string>>(new Set());
+export function TransactionsTable({ selectedIDs, setSelectedIDs, data }: Props) {
     const onTxnClick = (id: string) => {
         const newSelectedIDs = new Set(selectedIDs);
         const select = !selectedIDs.has(id);

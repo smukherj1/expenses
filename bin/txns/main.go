@@ -96,7 +96,7 @@ func skipDescEmbedding() validateTxnOption {
 }
 
 var commonHeaders = map[string]string{
-	"Access-Control-Allow-Origin":  "*",
+	// "Access-Control-Allow-Origin":  "*",
 	"Access-Control-Allow-Headers": "Accept, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization",
 	"Content-Type":                 "application/json",
 	"Access-Control-Allow-Methods": "POST, GET, OPTIONS, PUT, DELETE",
@@ -124,6 +124,18 @@ func validateDate(dateStr string) (time.Time, int, error) {
 		return time.Time{}, http.StatusBadRequest, fmt.Errorf("invalid date %q, want format yyyy/mm/dd", dateStr)
 	}
 	return date, http.StatusOK, nil
+}
+
+func validateTags(tags []string) error {
+	if len(tags) > storage.MaxTags {
+		return fmt.Errorf("tags limit exceeded, got %v tags, want <= %v", len(tags), storage.MaxTags)
+	}
+	for i, t := range tags {
+		if len(t) == 0 || len(t) > storage.TagSizeLimit {
+			return fmt.Errorf("length of tag at index %v was invalid, got length %v, want <= %v", i, len(t), storage.TagSizeLimit)
+		}
+	}
+	return nil
 }
 
 func validateTxn(tx *txn, vopts ...validateTxnOption) (*validatedTxn, int, error) {
@@ -198,13 +210,8 @@ func validateTxn(tx *txn, vopts ...validateTxnOption) (*validatedTxn, int, error
 		}
 		result.descEmbedding = tx.DescEmbedding
 	}
-	if len(tx.Tags) > storage.MaxTags {
-		return nil, http.StatusBadRequest, fmt.Errorf("tags limit exceeded, got %v tags, want <= %v", len(tx.Tags), storage.MaxTags)
-	}
-	for i, t := range tx.Tags {
-		if len(t) == 0 || len(t) > storage.TagSizeLimit {
-			return nil, http.StatusBadRequest, fmt.Errorf("length of tag at index %v was invalid, got length %v, want <= %v", i, len(t), storage.TagSizeLimit)
-		}
+	if err := validateTags(tx.Tags); err != nil {
+		return nil, http.StatusBadRequest, err
 	}
 	result.tags = tx.Tags
 	return &result, http.StatusOK, nil
@@ -408,10 +415,24 @@ func (s *txnsServer) getByID(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(string(resp)))
 }
 
+func convertIDs(ids []string) ([]int64, error) {
+	var result []int64
+	if l := len(ids); l == 0 || l > storage.MaxIDs {
+		return nil, fmt.Errorf("invalid number of ids in request, got %v, want > 0 and <= %v", l, storage.MaxIDs)
+	}
+	for _, istr := range ids {
+		id, err := strconv.ParseInt(istr, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("'%v' is not a valid transaction ID, expecting a base 10 64-bit integer: %w", istr, err)
+		}
+		result = append(result, id)
+	}
+	return result, nil
+}
+
 type patchTxn struct {
-	IDs           []int64  `json:"ids,omitempty"`
+	IDs           []string `json:"ids,omitempty"`
 	Tags          []string `json:"tags,omitempty"`
-	ClearTags     bool     `json:"clearTags,omitempty"`
 	DescEmbedding string   `json:"desc_embedding,omitempty"`
 }
 
@@ -434,8 +455,9 @@ func (s *txnsServer) patch(w http.ResponseWriter, r *http.Request) {
 		respondf(w, http.StatusBadRequest, "too many IDs in request, got %v, want <= %v", len(ptx.IDs), storage.MaxIDs)
 		return
 	}
-	if len(ptx.Tags) > 0 && ptx.ClearTags {
-		respondf(w, http.StatusBadRequest, "clearTags can't be set in request when tags is set")
+	ids, err := convertIDs(ptx.IDs)
+	if err != nil {
+		respondf(w, http.StatusBadRequest, "error validating ids in request: %v", err)
 		return
 	}
 	tx := txn{
@@ -455,20 +477,78 @@ func (s *txnsServer) patch(w http.ResponseWriter, r *http.Request) {
 	if len(vtx.tags) != 0 {
 		tu.Tags = &vtx.tags
 	}
-	if ptx.ClearTags {
-		tu.Tags = &[]string{}
-	}
 	if len(vtx.descEmbedding) != 0 {
 		tu.DescEmbedding = &vtx.descEmbedding
 	}
-	if ok, err := s.db.UpdateTxns(r.Context(), ptx.IDs, tu); err != nil {
+	if err := s.db.UpdateTxns(r.Context(), ids, tu); err != nil {
 		respondf(w, http.StatusInternalServerError, fmt.Sprintf("error patching txn %v: %v", vtx.id, err))
-		return
-	} else if !ok {
-		respondf(w, http.StatusNotFound, "no matching txns found")
 		return
 	}
 	respondf(w, http.StatusOK, "txn %v updated", vtx.id)
+}
+
+type patchTagsRequest struct {
+	IDs  []string `json:"ids,omitempty"`
+	Tags []string `json:"tags,omitempty"`
+	Op   string   `json:"op,omitempty"`
+}
+
+func (s *txnsServer) patchTags(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		respondf(w, http.StatusBadRequest, "error reading request body: %v", err)
+		return
+	}
+	var ptx patchTagsRequest
+	if err := json.Unmarshal(body, &ptx); err != nil {
+		respondf(w, http.StatusBadRequest, "error parsing body as a JSON transaction: %v", err)
+		return
+	}
+	ids, err := convertIDs(ptx.IDs)
+	if err != nil {
+		respondf(w, http.StatusBadRequest, "error validating ids in request: %v", err)
+		return
+	}
+	if ptx.Op == "clear" && len(ptx.Tags) != 0 {
+		respondf(w, http.StatusBadRequest, "field 'tags' can't be specified when 'op' is clear")
+		return
+	}
+	if ptx.Op != "clear" && len(ptx.Tags) == 0 {
+		respondf(w, http.StatusBadRequest, "request body missing field 'tags'")
+		return
+	}
+	if err := validateTags(ptx.Tags); err != nil {
+		respondf(w, http.StatusBadRequest, "error validating tags in request: %v", err)
+		return
+	}
+	if len(ptx.Op) == 0 {
+		respondf(w, http.StatusBadRequest, "request body missing field 'op'")
+		return
+	}
+	switch ptx.Op {
+	case "add":
+		if err := s.db.TxnAddTags(r.Context(), ids, ptx.Tags); err != nil {
+			respondf(w, http.StatusInternalServerError, "error adding tags: %v", err)
+			return
+		}
+	case "remove":
+		if err := s.db.TxnRemoveTags(r.Context(), ids, ptx.Tags); err != nil {
+			respondf(w, http.StatusInternalServerError, "error removing tags: %v", err)
+			return
+		}
+	case "clear":
+		if err := s.db.UpdateTxns(r.Context(), ids, &storage.TxnUpdates{
+			Tags: &[]string{},
+		}); err != nil {
+			respondf(w, http.StatusInternalServerError, "error clearing tags: %v", err)
+			return
+		}
+	default:
+		respondf(w, http.StatusBadRequest, "unknown op '%v', supported ops are add|remove|clear", err)
+		return
+	}
+
+	respondf(w, http.StatusOK, "OK")
 }
 
 func corsHandler(w http.ResponseWriter, _ *http.Request) {
@@ -496,6 +576,9 @@ func main() {
 		r.Patch("/", ts.patch)
 		r.Get("/{id}", ts.getByID)
 		r.Options("/", corsHandler)
+		r.Route("/tags", func(r chi.Router) {
+			r.Patch("/", ts.patchTags)
+		})
 	})
 	addr := ":4000"
 	log.Println("Running txns server at", addr)

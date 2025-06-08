@@ -1,10 +1,11 @@
 
-import { NextResponse, NextRequest } from 'next/server'
+import { NextRequest } from 'next/server'
 import { z, ZodError } from 'zod';
 import { StatusCodes } from 'http-status-codes';
 
 const RequestSchema = z.object({
-    txnIds: z.array(z.number()),
+    ids: z.array(z.string()),
+    op: z.string(),
     tags: z.array(z.string())
 });
 
@@ -18,30 +19,28 @@ function zodErrorStr(err: ZodError): string {
 }
 
 export async function POST(request: NextRequest) {
-    let txnIDs: number[] = [];
+    let ids: string[] = [];
     let tags: string[] = [];
+    let op: string = "";
     try {
         const parsed = RequestSchema.safeParse(await request.json())
         if (!parsed.success) {
-            return new NextResponse(
-                `invalid request: ${zodErrorStr(parsed.error)}`, {
+            return Response.json({ "details": `invalid request: ${zodErrorStr(parsed.error)}` }, {
                 status: StatusCodes.BAD_REQUEST,
-            }
-            );
+            });
         }
-        txnIDs = parsed.data.txnIds;
+        ids = parsed.data.ids;
         tags = parsed.data.tags;
+        op = parsed.data.op;
     } catch (error) {
         if (error instanceof SyntaxError) {
-            return new NextResponse(
-                `Request body was not valid JSON: ${error.message}`, {
+            return Response.json({ "details": `Request body was not valid JSON: ${error.message}` }, {
                 status: StatusCodes.BAD_REQUEST,
-            }
-            );
+            });
         }
     }
-    console.log(`Updating tags for txns ${txnIDs} to ${tags}`);
-    const url = `http://localhost:4000/txns`;
+    console.log(`Updating tags for txns ${ids} to ${tags}`);
+    const url = `http://localhost:4000/txns/tags`;
     try {
         const response = await fetch(url, {
             method: "PATCH",
@@ -49,21 +48,22 @@ export async function POST(request: NextRequest) {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                ids: txnIDs,
-                ...(tags.length === 0 ? { clearTags: true } : { tags: tags }),
+                ids: ids,
+                op: op,
+                tags: tags,
             })
         });
         if (!response.ok) {
-            return new NextResponse(`error updating tags on backend: ${await response.text()}`, {
+            return Response.json({ "details": `error updating tags on backend: ${await response.text()}` }, {
                 status: response.status,
-            })
+            });
         }
     } catch (error) {
-        return new NextResponse(`error forwarding request to update tags to backend: ${error}`, {
+        return Response.json({ "details": `error forwarding request to update tags to backend: ${error}` }, {
             status: StatusCodes.INTERNAL_SERVER_ERROR,
         })
     }
-    return new NextResponse("OK\n", {
+    return Response.json({ "details": "OK" }, {
         status: StatusCodes.OK,
     });
 }

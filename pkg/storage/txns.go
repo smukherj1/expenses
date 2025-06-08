@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"regexp"
 	"strings"
 	"time"
@@ -206,13 +205,13 @@ func int64sToStrs(is []int64) []string {
 	return s
 }
 
-func (s *Storage) UpdateTxns(ctx context.Context, ids []int64, tu *TxnUpdates) (bool, error) {
+func (s *Storage) UpdateTxns(ctx context.Context, ids []int64, tu *TxnUpdates) error {
 	var defaultUpdates TxnUpdates
 	if tu == nil || *tu == defaultUpdates {
-		return false, fmt.Errorf("no fields were requested to be updated for the given transaction IDs")
+		return fmt.Errorf("no fields were requested to be updated for the given transaction IDs")
 	}
 	if len(ids) < 1 {
-		return false, fmt.Errorf("ids must be specified")
+		return fmt.Errorf("ids must be specified")
 	}
 	q := `UPDATE TRANSACTIONS SET `
 	vCounter := 1
@@ -220,7 +219,7 @@ func (s *Storage) UpdateTxns(ctx context.Context, ids []int64, tu *TxnUpdates) (
 	var vals []any
 	if tu.Tags != nil {
 		if err := validateTags(*tu.Tags); err != nil {
-			return false, fmt.Errorf("unable to update txns with invalid tags: %w", err)
+			return fmt.Errorf("unable to update txns with invalid tags: %w", err)
 		}
 		if len(*tu.Tags) == 0 {
 			assigns = append(assigns, "TAGS = NULL")
@@ -232,10 +231,10 @@ func (s *Storage) UpdateTxns(ctx context.Context, ids []int64, tu *TxnUpdates) (
 	}
 	if tu.DescEmbedding != nil {
 		if len(ids) != 1 {
-			return false, fmt.Errorf("can't update embedding, got %v ids, want 1", len(ids))
+			return fmt.Errorf("can't update embedding, got %v ids, want 1", len(ids))
 		}
 		if err := validateDescEmbedding(*tu.DescEmbedding); err != nil {
-			return false, fmt.Errorf("unable to update txn %v with invalid description embedding: %w", ids[0], err)
+			return fmt.Errorf("unable to update txn %v with invalid description embedding: %w", ids[0], err)
 		}
 		assigns = append(assigns, fmt.Sprint("DESC_EMBEDDING = $", vCounter))
 		vals = append(vals, *tu.DescEmbedding)
@@ -243,15 +242,102 @@ func (s *Storage) UpdateTxns(ctx context.Context, ids []int64, tu *TxnUpdates) (
 	}
 	q += strings.Join(assigns, ", ")
 	q += fmt.Sprintf(" WHERE ID IN (%v)", strings.Join(int64sToStrs(ids), ", "))
-	log.Printf("UpdateTxns SQL: '%v'", q)
 	rows, err := s.db.QueryContext(ctx, q, vals...)
-	if errors.Is(err, sql.ErrNoRows) {
-		return false, nil
-	} else if err != nil {
-		return false, fmt.Errorf("error updating transaction: %w", err)
+	if err != nil {
+		return fmt.Errorf("error updating transaction: %w", err)
 	}
 	defer rows.Close()
-	return true, nil
+	return nil
+}
+
+func (s *Storage) TxnAddTags(ctx context.Context, ids []int64, tags []string) error {
+	if err := validateTags(tags); err != nil {
+		return fmt.Errorf("error validating tags to be added: %w", err)
+	}
+	if len(ids) == 0 {
+		return errors.New("no ids given to add the given tags")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("error beginning transaction with database: %w", err)
+	}
+	defer func() {
+		if tx == nil {
+			return
+		}
+		tx.Rollback()
+	}()
+	stmt, err := tx.Prepare(`
+		UPDATE TRANSACTIONS
+		SET TAGS = ARRAY(
+			SELECT DISTINCT UNNEST(TAGS || $1::VARCHAR(30)[])
+		)
+		WHERE ID = ANY($2::BIGINT[])
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to prepare statement: %w", err)
+	}
+	defer stmt.Close()
+
+	result, err := stmt.ExecContext(ctx, pq.Array(tags), pq.Array(ids))
+	if err != nil {
+		return fmt.Errorf("failed to execute update: %w", err)
+	}
+	if rows, err := result.RowsAffected(); err != nil {
+		return fmt.Errorf("failed to verify number of updated txns: %w", err)
+	} else if int(rows) != len(ids) {
+		return fmt.Errorf("not all txns updated successfully, got %v updated, want %v", rows, len(ids))
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("error committing updates: %w", err)
+	}
+	tx = nil
+	return nil
+}
+
+func (s *Storage) TxnRemoveTags(ctx context.Context, ids []int64, tags []string) error {
+	if err := validateTags(tags); err != nil {
+		return fmt.Errorf("error validating tags to be removed: %w", err)
+	}
+	if len(ids) == 0 {
+		return errors.New("no ids given to remove the given tags")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("error beginning transaction with database: %w", err)
+	}
+	defer func() {
+		if tx == nil {
+			return
+		}
+		tx.Rollback()
+	}()
+	stmt, err := tx.Prepare(`
+		UPDATE TRANSACTIONS
+		SET TAGS = ARRAY(
+			SELECT UNNEST(TAGS) EXCEPT SELECT UNNEST($1::VARCHAR(30)[])
+		)
+		WHERE ID = ANY($2::BIGINT[])
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to prepare statement: %w", err)
+	}
+	defer stmt.Close()
+
+	result, err := stmt.ExecContext(ctx, pq.Array(tags), pq.Array(ids))
+	if err != nil {
+		return fmt.Errorf("failed to execute update: %w", err)
+	}
+	if rows, err := result.RowsAffected(); err != nil {
+		return fmt.Errorf("failed to verify number of updated txns: %w", err)
+	} else if int(rows) != len(ids) {
+		return fmt.Errorf("not all txns updated successfully, got %v updated, want %v", rows, len(ids))
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("error committing updates: %w", err)
+	}
+	tx = nil
+	return nil
 }
 
 func (s *Storage) QueryTxns(ctx context.Context, tq *TxnQuery) ([]Txn, error) {

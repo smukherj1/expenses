@@ -1,6 +1,5 @@
-import { SearchRow } from "./searchrow"
-import { TransactionsTable } from "@/components/internal/transactions";
-import { FetchTransactions, Transaction } from "@/lib/transactions";
+import { FetchTransactions } from "@/lib/transactions";
+import { EditClientPage } from "./edit-client-page";
 
 interface EditPageProps {
     searchParams: Promise<{
@@ -14,15 +13,12 @@ interface EditPageProps {
 
 export default async function EditPage({ searchParams }: EditPageProps) {
     const { fromDate, toDate, description, source, tags } = await searchParams;
-    const fetchedTransactions = await FetchTransactions({
+    const txns = await FetchTransactions({
         fromDate: fromDate,
         toDate: toDate,
         description: description ?? "",
         source: source ?? "",
         tags: tags ?? ""
     });
-    return (<>
-        <SearchRow />
-        <TransactionsTable data={fetchedTransactions} />
-    </>);
+    return <EditClientPage txns={txns} />;
 }
