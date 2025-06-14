@@ -38,12 +38,15 @@ const TransactionsRespSchema = z.object({
     txns: z.array(TransactionSchema).optional().default(new Array()),
 });
 
-export async function FetchTransactions({ fromDate, toDate, description, source, tags }: {
+export async function FetchTransactions({ fromDate, toDate, description, descriptionOp, source, sourceOp, tags, tagsOp }: {
     fromDate: string | undefined
     toDate: string | undefined
     description: string
+    descriptionOp: string
     source: string
+    sourceOp: string
     tags: string
+    tagsOp: string
 }): Promise<Transaction[]> {
     let params = new URLSearchParams({
         limit: "20",
@@ -57,14 +60,19 @@ export async function FetchTransactions({ fromDate, toDate, description, source,
     description = description.trim().toLowerCase();
     if (description.length != 0) {
         params.set("description", description);
+        params.set("descriptionOp", descriptionOp)
     }
     source = source.trim().toLowerCase();
     if (source.length != 0) {
         params.set("source", source);
+        params.set("sourceOp", sourceOp);
     }
     tags = tags.trim().toLowerCase();
     if (tags.length != 0) {
         params.set("tags", tags);
+        params.set("tagsOp", tagsOp)
+    } else if (tagsOp === "empty") {
+        params.set("tagsOp", tagsOp)
     }
 
     const url = `http://localhost:4000/txns?${params.toString()}`;

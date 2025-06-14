@@ -21,12 +21,16 @@ const (
 	MaxTags      = 30
 	TagSizeLimit = 10
 	dateQueryFmt = "2006-01-02"
+	OpMatch      = "match"
+	OpNotMatch   = "not-match"
+	OpEmpty      = "empty"
 )
 
 var (
 	descRegexp = regexp.MustCompile(`^[\w\s-]+$`)
 	srcRegexp  = regexp.MustCompile(`^[\w\s-]+$`)
 	tagRegexp  = regexp.MustCompile(`^[\w\s-]+$`)
+	ValidOps   = fmt.Sprintf("%v|%v|%v", OpMatch, OpNotMatch, OpEmpty)
 )
 
 type Txn struct {
@@ -37,6 +41,18 @@ type Txn struct {
 	Source        string
 	Tags          []string
 	DescEmbedding string
+}
+
+func ValidateOp(op string) bool {
+	switch op {
+	case OpMatch:
+		fallthrough
+	case OpNotMatch:
+		fallthrough
+	case OpEmpty:
+		return true
+	}
+	return false
 }
 
 func validateTags(tags []string) error {
@@ -91,9 +107,12 @@ type TxnQuery struct {
 	FromDate    *time.Time
 	ToDate      *time.Time
 	Description *string
+	DescOp      string
 	AmountCents *int64
 	Source      *string
+	SourceOp    string
 	Tags        *[]string
+	TagsOp      string
 	StartID     int64
 	Limit       int64
 }
@@ -110,6 +129,9 @@ func (tq *TxnQuery) validate() error {
 		if !descRegexp.MatchString(*tq.Description) {
 			return fmt.Errorf("description had invalid characters, got '%v', only alphanumeric, spaces, hyphens and dashes are allowed", *tq.Description)
 		}
+		if ok := ValidateOp(tq.DescOp); !ok {
+			return fmt.Errorf("invalid descOp '%v'", tq.DescOp)
+		}
 	}
 	if tq.Source != nil {
 		if l := len(*tq.Source); l > SourceLimit {
@@ -118,10 +140,16 @@ func (tq *TxnQuery) validate() error {
 		if !srcRegexp.MatchString(*tq.Source) {
 			return fmt.Errorf("source had invalid characters, got '%v', only alphanumeric, spaces, hyphens and dashes are allowed", *tq.Source)
 		}
+		if ok := ValidateOp(tq.SourceOp); !ok {
+			return fmt.Errorf("invalid sourceOp '%v'", tq.SourceOp)
+		}
 	}
 	if tq.Tags != nil {
 		if err := validateTags(*tq.Tags); err != nil {
 			return fmt.Errorf("error validating tags: %w", err)
+		}
+		if ok := ValidateOp(tq.TagsOp); !ok {
+			return fmt.Errorf("invalid tagsOp '%v'", tq.TagsOp)
 		}
 	}
 	if tq.Limit < 0 || tq.Limit > 1000 {
@@ -171,25 +199,6 @@ VALUES (` + strings.Join(vars, ", ") + `) RETURNING ID
 		return 0, fmt.Errorf("error creating transaction: %w", err)
 	}
 	return id, nil
-}
-
-func (s *Storage) GetTxn(ctx context.Context, id int64) (*Txn, error) {
-	q := `SELECT DATE, DESCRIPTION, AMOUNT_CENTS, SOURCE, TAGS
-FROM TRANSACTIONS WHERE ID = $1
-`
-	result := &Txn{ID: id}
-	if err := s.db.QueryRowContext(ctx, q, id).Scan(
-		&result.Date,
-		&result.Description,
-		&result.AmountCents,
-		&result.Source,
-		(*pq.StringArray)(&result.Tags),
-	); errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	} else if err != nil {
-		return nil, fmt.Errorf("error fetching transaction with ID %v: %w", id, err)
-	}
-	return result, nil
 }
 
 type TxnUpdates struct {
@@ -362,14 +371,26 @@ FROM TRANSACTIONS WHERE `
 		qArgs = append(qArgs, ds)
 	}
 	if tq.Description != nil {
-		clauses = append(clauses, fmt.Sprint("DESCRIPTION ILIKE $", qCounter))
-		qCounter += 1
+		if tq.DescOp == OpMatch {
+			clauses = append(clauses, fmt.Sprint("DESCRIPTION ILIKE $", qCounter))
+		} else if tq.DescOp == OpNotMatch {
+			clauses = append(clauses, fmt.Sprint("DESCRIPTION NOT ILIKE $", qCounter))
+		} else {
+			return nil, fmt.Errorf("unsupported query op '%v' for description", tq.DescOp)
+		}
 		qArgs = append(qArgs, "%"+*tq.Description+"%")
+		qCounter += 1
 	}
 	if tq.Source != nil {
-		clauses = append(clauses, fmt.Sprint("SOURCE ILIKE $", qCounter))
-		qCounter += 1
+		if tq.SourceOp == OpMatch {
+			clauses = append(clauses, fmt.Sprint("SOURCE ILIKE $", qCounter))
+		} else if tq.SourceOp == OpNotMatch {
+			clauses = append(clauses, fmt.Sprint("SOURCE NOT ILIKE $", qCounter))
+		} else {
+			return nil, fmt.Errorf("unsupported query op '%v' for source", tq.SourceOp)
+		}
 		qArgs = append(qArgs, "%"+*tq.Source+"%")
+		qCounter += 1
 	}
 	if tq.AmountCents != nil {
 		clauses = append(clauses, fmt.Sprint("AMOUNT_CENTS = $", qCounter))
@@ -377,9 +398,18 @@ FROM TRANSACTIONS WHERE `
 		qArgs = append(qArgs, *tq.AmountCents)
 	}
 	if tq.Tags != nil {
-		clauses = append(clauses, fmt.Sprint("TAGS = $", qCounter))
+		if tq.TagsOp == OpMatch {
+			clauses = append(clauses, fmt.Sprint("TAGS @> $", qCounter))
+		} else if tq.TagsOp == OpNotMatch {
+			clauses = append(clauses, fmt.Sprint("((TAGS IS NULL) OR (CARDINALITY(TAGS) = 0) OR (NOT (TAGS && $", qCounter, ")))"))
+		} else {
+			return nil, fmt.Errorf("unsupported query op '%v' for tags", tq.TagsOp)
+		}
 		qCounter += 1
 		qArgs = append(qArgs, pq.Array(*tq.Tags))
+	}
+	if tq.TagsOp == OpEmpty {
+		clauses = append(clauses, "((TAGS IS NULL) OR (CARDINALITY(TAGS) = 0))")
 	}
 	q += strings.Join(clauses, " AND ")
 	q += fmt.Sprint(" ORDER BY ID ASC LIMIT ", tq.Limit)

@@ -264,9 +264,12 @@ func (s *txnsServer) get(w http.ResponseWriter, r *http.Request) {
 	fromDateStr := r.URL.Query().Get("fromDate")
 	toDateStr := r.URL.Query().Get("toDate")
 	desc := r.URL.Query().Get("description")
+	descOp := r.URL.Query().Get("descriptionOp")
 	amount := r.URL.Query().Get("amount")
 	source := r.URL.Query().Get("source")
+	sourceOp := r.URL.Query().Get("sourceOp")
 	tagsStr := r.URL.Query().Get("tags")
+	tagsOp := r.URL.Query().Get("tagsOp")
 	startIDStr := r.URL.Query().Get("startId")
 	limitStr := r.URL.Query().Get("limit")
 	var fromDate, toDate *time.Time
@@ -286,9 +289,14 @@ func (s *txnsServer) get(w http.ResponseWriter, r *http.Request) {
 		}
 		toDate = &d
 	}
+
 	var tags []string
 	if tagsStr != "" {
 		tags = strings.Split(tagsStr, " ")
+		if ok := storage.ValidateOp(tagsOp); !ok {
+			respondf(w, http.StatusBadRequest, "invalid tags op '%v', must be %v", tagsOp, storage.ValidOps)
+			return
+		}
 	}
 	var startID, limit int64
 	if startIDStr != "" {
@@ -310,12 +318,24 @@ func (s *txnsServer) get(w http.ResponseWriter, r *http.Request) {
 	opts := []validateTxnOption{skipID(), skipDescEmbedding(), skipDate()}
 	if desc == "" {
 		opts = append(opts, skipDescription())
+	} else if ok := storage.ValidateOp(descOp); !ok {
+		respondf(w, http.StatusBadRequest, "invalid description op '%v', must be %v", descOp, storage.ValidOps)
+		return
+	} else if descOp == storage.OpEmpty {
+		respondf(w, http.StatusBadRequest, "unsupported description op '%v'", descOp)
+		return
 	}
 	if amount == "" {
 		opts = append(opts, skipAmount())
 	}
 	if source == "" {
 		opts = append(opts, skipSource())
+	} else if ok := storage.ValidateOp(sourceOp); !ok {
+		respondf(w, http.StatusBadRequest, "invalid source op '%v', must be %v", sourceOp, storage.ValidOps)
+		return
+	} else if sourceOp == storage.OpEmpty {
+		respondf(w, http.StatusBadRequest, "unsupported source op '%v'", sourceOp)
+		return
 	}
 	vtxn, code, err := validateTxn(&txn{
 		Description: desc,
@@ -335,15 +355,20 @@ func (s *txnsServer) get(w http.ResponseWriter, r *http.Request) {
 	}
 	if desc != "" {
 		tq.Description = &vtxn.description
+		tq.DescOp = descOp
 	}
 	if amount != "" {
 		tq.AmountCents = &vtxn.amountCents
 	}
 	if source != "" {
 		tq.Source = &vtxn.source
+		tq.SourceOp = sourceOp
 	}
 	if tags != nil {
 		tq.Tags = &tags
+	}
+	if tags != nil || tagsOp == storage.OpEmpty {
+		tq.TagsOp = tagsOp
 	}
 	txns, err := s.db.QueryTxns(r.Context(), &tq)
 	if err != nil {
@@ -383,36 +408,6 @@ func txnsStorageToResp(sts []storage.Txn) txnsResp {
 	}
 	result.NextID = fmt.Sprint(nextID)
 	return result
-}
-
-func (s *txnsServer) getByID(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	if id == "" {
-		respondf(w, http.StatusBadRequest, "txn id missing in URL path")
-		return
-	}
-	txnID, err := strconv.ParseInt(id, 10, 64)
-	if err != nil {
-		respondf(w, http.StatusBadRequest, "id %q in path was not a valid 64-bit integer: %v", id, err)
-		return
-	}
-	t, err := s.db.GetTxn(r.Context(), txnID)
-	if err != nil {
-		respondf(w, http.StatusInternalServerError, "error fetching txn: %v", err)
-		return
-	}
-	if t == nil {
-		respondf(w, http.StatusNotFound, "txn %v not found", txnID)
-		return
-	}
-	txnResp := txnsStorageToResp([]storage.Txn{*t})
-	resp, err := json.Marshal(txnResp.Txns[0])
-	if err != nil {
-		respondf(w, http.StatusInternalServerError, "error generating JSON for response: %v", err)
-		return
-	}
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(string(resp)))
 }
 
 func convertIDs(ids []string) ([]int64, error) {
@@ -574,7 +569,6 @@ func main() {
 		r.Get("/", ts.get)
 		r.Post("/", ts.post)
 		r.Patch("/", ts.patch)
-		r.Get("/{id}", ts.getByID)
 		r.Options("/", corsHandler)
 		r.Route("/tags", func(r chi.Router) {
 			r.Patch("/", ts.patchTags)

@@ -9,7 +9,6 @@ import {
 } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Transaction } from "@/lib/transactions";
-import { useState } from "react";
 
 function formatDate(date: Date): string {
     const month = date.getMonth() + 1; // getMonth() returns 0-indexed month

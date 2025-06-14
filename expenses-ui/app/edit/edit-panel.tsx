@@ -28,10 +28,18 @@ import {
 } from "@/components/ui/card"
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select"
 import { useDebouncedCallback } from 'use-debounce';
 import { usePathname, useRouter } from 'next/navigation';
 import { formatDate } from "../utils";
 import EditDialog from "./edit-dialog";
+import TextSearchField, { OpType } from "./text-search-field";
 
 export type Props = {
     txnIDs: string[]
@@ -43,8 +51,11 @@ export function EditPanel({ txnIDs }: Props) {
     );
     const [toDate, setToDate] = useState<Date | undefined>(new Date());
     const [description, setDescription] = useState<string>("");
+    const [descriptionOp, setDescriptionOp] = useState<OpType>("all");
     const [source, setSource] = useState<string>("");
+    const [sourceOp, setSourceOp] = useState<OpType>("all");
     const [tags, setTags] = useState<string>("");
+    const [tagsOp, setTagsOp] = useState<OpType>("all");
     const { replace } = useRouter();
     const pathname = usePathname();
 
@@ -58,12 +69,17 @@ export function EditPanel({ txnIDs }: Props) {
         }
         if (description.length > 0) {
             params.set('description', description);
+            params.set('descriptionOp', descriptionOp);
         }
         if (source.length > 0) {
             params.set('source', source);
+            params.set('sourceOp', sourceOp);
         }
         if (tags.length > 0) {
             params.set('tags', tags);
+        }
+        if (tags.length > 0 || tagsOp == "empty") {
+            params.set('tagsOp', tagsOp);
         }
         return `${params.toString()}`;
     }
@@ -74,120 +90,95 @@ export function EditPanel({ txnIDs }: Props) {
     useEffect(() => {
         debouncedSearch();
     },
-        [fromDate, toDate, description, source, tags]
+        [fromDate, toDate, description, descriptionOp,
+            source, sourceOp, tags, tagsOp]
     );
     return (
         <Card className="gap-1 py-3 bg-gray-50 shadow-sm">
             <CardHeader>
                 <CardTitle>Search for transactions</CardTitle>
             </CardHeader>
-            <CardContent className="flex flex-col sm:flex-row items-center space-y-4 sm:space-y-0 sm:space-x-4 p-2 rounded-lg">
+            <CardContent className="flex flex-col h-20 justify-between items-start sm:flex-row flex-wrap sm:items-end gap-4 p-2 rounded-lg">
                 {/* From Date Selector */}
-                <div className="flex flex-col space-y-1 w-full sm:w-auto">
-                    <Label htmlFor="from-date-picker">From</Label>
+                <div className="flex flex-col grow space-y-1 justify-between w-full h-full sm:w-[240px]">
+                    <Label>From</Label>
                     <Popover>
                         <PopoverTrigger asChild>
                             <Button
-                                id="from-date-picker"
-                                variant={"outline"}
-                                className={cn(
-                                    "w-full sm:w-[240px] justify-start text-left font-normal",
-                                    !fromDate && "text-muted-foreground"
-                                )}
+                                variant="outline"
+                                className={cn("w-full justify-start text-left font-normal", !fromDate && "text-muted-foreground")}
                             >
                                 <CalendarIcon className="mr-2 h-4 w-4" />
                                 {fromDate ? format(fromDate, "PPP") : <span>Pick a date</span>}
                             </Button>
                         </PopoverTrigger>
                         <PopoverContent className="w-auto p-0">
-                            <Calendar
-                                mode="single"
-                                selected={fromDate}
-                                onSelect={setFromDate}
-                                initialFocus
-                            />
+                            <Calendar mode="single" selected={fromDate} onSelect={setFromDate} initialFocus />
                         </PopoverContent>
                     </Popover>
                 </div>
 
                 {/* To Date Selector */}
-                <div className="flex flex-col space-y-1 w-full sm:w-auto">
-                    <Label htmlFor="to-date-picker">To</Label>
+                <div className="flex flex-col grow space-y-1 justify-between w-full h-full sm:w-[240px]">
+                    <Label>To</Label>
                     <Popover>
                         <PopoverTrigger asChild>
                             <Button
-                                id="to-date-picker"
-                                variant={"outline"}
-                                className={cn(
-                                    "w-full sm:w-[240px] justify-start text-left font-normal",
-                                    !toDate && "text-muted-foreground"
-                                )}
+                                variant="outline"
+                                className={cn("w-full justify-start text-left font-normal", !toDate && "text-muted-foreground")}
                             >
                                 <CalendarIcon className="mr-2 h-4 w-4" />
                                 {toDate ? format(toDate, "PPP") : <span>Pick a date</span>}
                             </Button>
                         </PopoverTrigger>
                         <PopoverContent className="w-auto p-0">
-                            <Calendar
-                                mode="single"
-                                selected={toDate}
-                                onSelect={setToDate}
-                                initialFocus
-                            />
+                            <Calendar mode="single" selected={toDate} onSelect={setToDate} initialFocus />
                         </PopoverContent>
                     </Popover>
                 </div>
 
-                {/* Description Free Text Input */}
-                <div className="flex flex-col space-y-1 w-full flex-grow">
-                    <Label htmlFor="description-input">Description</Label>
-                    <Input
-                        id="description-input"
-                        placeholder="Enter description"
-                        value={description} // Bind to prop
-                        onChange={(e) => setDescription(e.target.value)}
-                        className="w-full"
-                    />
-                </div>
-                {/* Source Free Text Input */}
-                <div className="flex flex-col space-y-1 w-full flex-grow">
-                    <Label htmlFor="source-input">Source</Label>
-                    <Input
-                        id="source-input"
-                        placeholder="Enter source"
-                        value={source} // Bind to prop
-                        onChange={(e) => setSource(e.target.value)}
-                        className="w-full"
-                    />
-                </div>
-                {/* Tags Free Text Input */}
-                <div className="flex flex-col space-y-1 w-full flex-grow">
-                    <Label htmlFor="tags-input">Tags</Label>
-                    <Input
-                        id="tags-input"
-                        placeholder="Enter tags"
-                        value={tags} // Bind to prop
-                        onChange={(e) => setTags(e.target.value)}
-                        className="w-full"
-                    />
-                </div>
+                {/* Description Input */}
+                <TextSearchField
+                    field="Description"
+                    value={description}
+                    setValue={setDescription}
+                    op={descriptionOp}
+                    setOp={setDescriptionOp}
+                />
+                <TextSearchField
+                    field="Source"
+                    value={source}
+                    setValue={setSource}
+                    op={sourceOp}
+                    setOp={setSourceOp}
+                />
+                <TextSearchField
+                    field="Tags"
+                    value={tags}
+                    setValue={setTags}
+                    op={tagsOp}
+                    setOp={setTagsOp}
+                    allowEmpty
+                />
+
                 {/* Edit Button */}
-                <Dialog>
-                    <DialogTrigger asChild>
-                        <Button className="flex self-end" disabled={txnIDs.length === 0}>Edit</Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                        <DialogHeader>
-                            <DialogTitle>Request Tag Changes</DialogTitle>
-                            <DialogDescription>
-                                Add, remove or clear tags for the {txnIDs.length} selected transactions
-                            </DialogDescription>
-                        </DialogHeader>
-                        {/* Tags Free Text Input */}
-                        <EditDialog txnIDs={txnIDs} tags={tags} />
-                    </DialogContent>
-                </Dialog>
+                <div className="flex flex-col space-y-1 w-full sm:w-auto self-stretch justify-end">
+                    <Dialog>
+                        <DialogTrigger asChild>
+                            <Button className="w-full sm:w-auto" disabled={txnIDs.length === 0}>Edit</Button>
+                        </DialogTrigger>
+                        <DialogContent>
+                            <DialogHeader>
+                                <DialogTitle>Request Tag Changes</DialogTitle>
+                                <DialogDescription>
+                                    Add, remove or clear tags for the {txnIDs.length} selected transactions
+                                </DialogDescription>
+                            </DialogHeader>
+                            <EditDialog txnIDs={txnIDs} tags={tags} />
+                        </DialogContent>
+                    </Dialog>
+                </div>
             </CardContent>
-        </Card>
+        </Card >
     );
 }
