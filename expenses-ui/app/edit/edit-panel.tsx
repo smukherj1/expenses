@@ -26,36 +26,35 @@ import {
     CardHeader,
     CardTitle,
 } from "@/components/ui/card"
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from "@/components/ui/select"
 import { useDebouncedCallback } from 'use-debounce';
 import { usePathname, useRouter } from 'next/navigation';
 import { formatDate } from "../utils";
 import EditDialog from "./edit-dialog";
-import TextSearchField, { OpType } from "./text-search-field";
+import TextSearchField, { OpType, coerceToOp } from "./text-search-field";
+import { TxnQueryParams } from "@/lib/transactions";
 
 export type Props = {
     txnIDs: string[]
+    queryParams: TxnQueryParams
 }
 
-export function EditPanel({ txnIDs }: Props) {
+export function EditPanel({ txnIDs, queryParams }: Props) {
     const [fromDate, setFromDate] = useState<Date | undefined>(
-        new Date("2014-01-01")
+        new Date(queryParams.fromDate ?? "2014-01-01")
     );
-    const [toDate, setToDate] = useState<Date | undefined>(new Date());
-    const [description, setDescription] = useState<string>("");
-    const [descriptionOp, setDescriptionOp] = useState<OpType>("all");
-    const [source, setSource] = useState<string>("");
-    const [sourceOp, setSourceOp] = useState<OpType>("all");
+    const [toDate, setToDate] = useState<Date | undefined>(() => {
+        if (queryParams.toDate == undefined) {
+            return new Date();
+        }
+        return new Date(queryParams.toDate);
+    });
+    const [description, setDescription] = useState<string>(queryParams.description ?? "");
+    const [descriptionOp, setDescriptionOp] = useState<OpType>(coerceToOp(queryParams.descriptionOp));
+    const [source, setSource] = useState<string>(queryParams.source ?? "");
+    const [sourceOp, setSourceOp] = useState<OpType>(coerceToOp(queryParams.sourceOp));
     const [tags, setTags] = useState<string>("");
-    const [tagsOp, setTagsOp] = useState<OpType>("all");
+    const [tagsOp, setTagsOp] = useState<OpType>(coerceToOp(queryParams.tagsOp));
     const { replace } = useRouter();
     const pathname = usePathname();
 

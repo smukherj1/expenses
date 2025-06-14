@@ -12,6 +12,13 @@ import {
 
 export type OpType = "all" | "match" | "not-match" | "empty"
 
+export function coerceToOp(s?: string): OpType {
+    if (s === "all" || s === "match" || s === "not-match" || s === "empty") {
+        return s;
+    }
+    return "all";
+}
+
 type Props = {
     field: string
     value: string
@@ -22,7 +29,7 @@ type Props = {
 }
 
 export default function TextSearchField({ field, value, setValue, op, setOp, allowEmpty }: Props) {
-    const [inputEnabled, setInputEnabled] = useState<boolean>(false);
+    const [inputEnabled, setInputEnabled] = useState<boolean>(op === "match" || op === "not-match");
     const onSelectChange = (v: OpType) => {
         if (v === "all" || v === "empty") {
             setInputEnabled(false);
