@@ -78,9 +78,10 @@ export async function FetchTransactions({ fromDate, toDate, description, descrip
         if (tags.length != 0) {
             params.set("tags", tags);
             params.set("tagsOp", tagsOp ?? "")
-        } else if (tagsOp === "empty") {
-            params.set("tagsOp", tagsOp)
         }
+    }
+    if (tagsOp === "empty") {
+        params.set("tagsOp", tagsOp)
     }
 
     const url = `http://localhost:4000/txns?${params.toString()}`;

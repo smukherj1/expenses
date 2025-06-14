@@ -53,7 +53,7 @@ export function EditPanel({ txnIDs, queryParams }: Props) {
     const [descriptionOp, setDescriptionOp] = useState<OpType>(coerceToOp(queryParams.descriptionOp));
     const [source, setSource] = useState<string>(queryParams.source ?? "");
     const [sourceOp, setSourceOp] = useState<OpType>(coerceToOp(queryParams.sourceOp));
-    const [tags, setTags] = useState<string>("");
+    const [tags, setTags] = useState<string>(queryParams.tags ?? "");
     const [tagsOp, setTagsOp] = useState<OpType>(coerceToOp(queryParams.tagsOp));
     const { replace } = useRouter();
     const pathname = usePathname();

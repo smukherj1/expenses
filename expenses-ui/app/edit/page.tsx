@@ -1,7 +1,7 @@
 import { FetchTransactions, TxnQueryParams } from "@/lib/transactions";
 import { EditClientPage } from "./edit-client-page";
 
-interface EditPageProps {
+type EditPageProps = {
     searchParams: Promise<TxnQueryParams>;
 }
 
