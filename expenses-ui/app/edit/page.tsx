@@ -2,7 +2,7 @@ import { FetchTransactions, TxnQueryParams } from "@/lib/transactions";
 import { EditClientPage } from "./edit-client-page";
 
 type EditPageProps = {
-    searchParams: Promise<TxnQueryParams>;
+    searchParams: Promise<TxnQueryParams>
 }
 
 export default async function EditPage({ searchParams }: EditPageProps) {

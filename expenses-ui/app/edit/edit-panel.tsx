@@ -55,7 +55,7 @@ export function EditPanel({ txnIDs, queryParams }: Props) {
     const [sourceOp, setSourceOp] = useState<OpType>(coerceToOp(queryParams.sourceOp));
     const [tags, setTags] = useState<string>(queryParams.tags ?? "");
     const [tagsOp, setTagsOp] = useState<OpType>(coerceToOp(queryParams.tagsOp));
-    const { replace } = useRouter();
+    const router = useRouter();
     const pathname = usePathname();
 
     function searchParams(): string {
@@ -84,7 +84,7 @@ export function EditPanel({ txnIDs, queryParams }: Props) {
     }
     const debouncedSearch = useDebouncedCallback(() => {
         const sp = searchParams();
-        replace(`${pathname}?${sp}`);
+        router.replace(`${pathname}?${sp}`);
     }, 300);
     useEffect(() => {
         debouncedSearch();
@@ -92,6 +92,12 @@ export function EditPanel({ txnIDs, queryParams }: Props) {
         [fromDate, toDate, description, descriptionOp,
             source, sourceOp, tags, tagsOp]
     );
+    const onEditSelected = () => {
+        const params = new URLSearchParams({
+            txnIds: txnIDs.join(" ")
+        });
+        router.push(`${pathname}/selected?${params.toString()}`);
+    };
     return (
         <Card className="gap-1 py-3 bg-gray-50 shadow-sm">
             <CardHeader>
@@ -162,9 +168,14 @@ export function EditPanel({ txnIDs, queryParams }: Props) {
 
                 {/* Edit Button */}
                 <div className="flex flex-col space-y-1 w-full sm:w-auto self-stretch justify-end">
+                    <Button
+                        disabled={txnIDs.length === 0}
+                        onClick={onEditSelected}>
+                        Edit Similar
+                    </Button>
                     <Dialog>
                         <DialogTrigger asChild>
-                            <Button className="w-full sm:w-auto" disabled={txnIDs.length === 0}>Edit</Button>
+                            <Button disabled={txnIDs.length === 0}>Edit</Button>
                         </DialogTrigger>
                         <DialogContent>
                             <DialogHeader>

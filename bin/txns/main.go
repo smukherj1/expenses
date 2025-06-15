@@ -425,6 +425,39 @@ func convertIDs(ids []string) ([]int64, error) {
 	return result, nil
 }
 
+type getSimilarResp struct {
+	Selected []txn `json:"selected_txns,omitempty"`
+	Similar  []txn `json:"similar_txns,omitempty"`
+}
+
+func (s *txnsServer) getSimilar(w http.ResponseWriter, r *http.Request) {
+	idsStr := strings.Trim(r.URL.Query().Get("ids"), " ")
+	if idsStr == "" {
+		respondf(w, http.StatusBadRequest, "url parameter 'ids' was missing or empty")
+		return
+	}
+	idStrs := strings.Split(idsStr, " ")
+	ids, err := convertIDs(idStrs)
+	if err != nil {
+		respondf(w, http.StatusBadRequest, "error parsing field ids: %v", err)
+		return
+	}
+	txns, err := s.db.QuerySimilarTxns(r.Context(), ids)
+	if err != nil {
+		respondf(w, http.StatusInternalServerError, "error finding similar txns: %v", err)
+		return
+	}
+	resp := getSimilarResp{
+		Selected: txnsStorageToResp(txns.Selected).Txns,
+		Similar:  txnsStorageToResp(txns.Similar).Txns,
+	}
+	respJSON, err := json.Marshal(&resp)
+	if err != nil {
+		respondf(w, http.StatusInternalServerError, "error converting response to JSON: %v", err)
+	}
+	respond(w, http.StatusOK, respJSON)
+}
+
 type patchTxn struct {
 	IDs           []string `json:"ids,omitempty"`
 	Tags          []string `json:"tags,omitempty"`
@@ -573,6 +606,7 @@ func main() {
 		r.Route("/tags", func(r chi.Router) {
 			r.Patch("/", ts.patchTags)
 		})
+		r.Get("/similar", ts.getSimilar)
 	})
 	addr := ":4000"
 	log.Println("Running txns server at", addr)

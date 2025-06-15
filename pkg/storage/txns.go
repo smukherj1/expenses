@@ -437,3 +437,85 @@ FROM TRANSACTIONS WHERE `
 
 	return result, nil
 }
+
+type SimilarTxns struct {
+	Selected []Txn
+	Similar  []Txn
+}
+
+func (s *Storage) QuerySimilarTxns(ctx context.Context, ids []int64) (SimilarTxns, error) {
+	q := `
+	WITH
+    SelectedTransactions AS (
+        SELECT
+			t.ID,
+			t.DATE,
+			t.DESCRIPTION,
+			t.AMOUNT_CENTS,
+			t.DESC_EMBEDDING
+		FROM TRANSACTIONS AS t
+		WHERE t.ID = ANY($1::BIGINT[])
+    ),
+	AvgDescEmbedding AS (
+	  SELECT AVG(DESC_EMBEDDING) AS avg_desc_embedding FROM SelectedTransactions
+	),
+    SimilarTransactions AS (
+        SELECT
+            t.ID,
+            t.DATE,
+            t.DESCRIPTION,
+            t.AMOUNT_CENTS
+        FROM
+            TRANSACTIONS AS t
+        WHERE
+		    (SELECT avg_desc_embedding FROM AvgDescEmbedding) IS NOT NULL
+            AND t.ID NOT IN (SELECT ID FROM SelectedTransactions)
+        ORDER BY
+            t.DESC_EMBEDDING <=> (SELECT avg_desc_embedding FROM AvgDescEmbedding)
+        LIMIT 40
+    )
+
+SELECT
+    ID,
+    DATE,
+    DESCRIPTION,
+    AMOUNT_CENTS,
+    0 AS QueryType
+FROM
+    SelectedTransactions
+
+UNION ALL
+
+SELECT
+    ID,
+    DATE,
+    DESCRIPTION,
+    AMOUNT_CENTS,
+    1 AS QueryType
+FROM
+    SimilarTransactions
+;
+	`
+	rows, err := s.db.QueryContext(ctx, q, pq.Array(ids))
+	if err != nil {
+		return SimilarTxns{}, fmt.Errorf("error querying similar txns: %w", err)
+	}
+	defer rows.Close()
+	var result SimilarTxns
+	for rows.Next() {
+		var qType int
+		var txn Txn
+		if err := rows.Scan(&txn.ID, &txn.Date, &txn.Description, &txn.AmountCents, &qType); err != nil {
+			return SimilarTxns{}, fmt.Errorf("error scanning similar txn row from database: %w", err)
+		}
+		switch qType {
+		case 0:
+			result.Selected = append(result.Selected, txn)
+		case 1:
+			result.Similar = append(result.Similar, txn)
+		default:
+			return SimilarTxns{}, fmt.Errorf("unknown txn type %v returned by database", qType)
+		}
+	}
+	return result, nil
+}
