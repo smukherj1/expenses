@@ -20,12 +20,6 @@ import {
     DialogTitle,
     DialogTrigger,
 } from "@/components/ui/dialog"
-import {
-    Card,
-    CardContent,
-    CardHeader,
-    CardTitle,
-} from "@/components/ui/card"
 import { Label } from "@/components/ui/label";
 import { useDebouncedCallback } from 'use-debounce';
 import { usePathname, useRouter } from 'next/navigation';
@@ -40,12 +34,15 @@ export type Props = {
 }
 
 export function EditPanel({ txnIDs, queryParams }: Props) {
-    const [fromDate, setFromDate] = useState<Date | undefined>(
-        new Date(queryParams.fromDate ?? "2014-01-01")
-    );
+    const [fromDate, setFromDate] = useState<Date | undefined>(() => {
+        if (!queryParams.fromDate) {
+            return;
+        }
+        return new Date(queryParams.fromDate);
+    });
     const [toDate, setToDate] = useState<Date | undefined>(() => {
-        if (queryParams.toDate == undefined) {
-            return new Date();
+        if (!queryParams.toDate) {
+            return;
         }
         return new Date(queryParams.toDate);
     });
@@ -60,6 +57,9 @@ export function EditPanel({ txnIDs, queryParams }: Props) {
 
     function searchParams(): string {
         const params = new URLSearchParams();
+        if (queryParams.ids != undefined) {
+            params.set("ids", queryParams.ids);
+        }
         if (fromDate != undefined) {
             params.set('fromDate', formatDate(fromDate));
         }
@@ -92,18 +92,16 @@ export function EditPanel({ txnIDs, queryParams }: Props) {
         [fromDate, toDate, description, descriptionOp,
             source, sourceOp, tags, tagsOp]
     );
-    const onEditSelected = () => {
+    const onEditSimilar = () => {
         const params = new URLSearchParams({
             txnIds: txnIDs.join(" ")
         });
-        router.push(`${pathname}/selected?${params.toString()}`);
+        router.push(`${pathname}/similar?${params.toString()}`);
     };
     return (
-        <Card className="gap-1 py-3 bg-gray-50 shadow-sm">
-            <CardHeader>
-                <CardTitle>Search for transactions</CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-col h-20 justify-between items-start sm:flex-row flex-wrap sm:items-end gap-4 p-2 rounded-lg">
+        <div className="flex flex-col bg-white dark:bg-gray-800 w-full p-3 space-y-2">
+            <Label className="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-4 block">Search for transactions</Label>
+            <div className="flex flex-col h-20 justify-between items-start sm:flex-row flex-wrap sm:items-end gap-4 p-2 rounded-lg">
                 {/* From Date Selector */}
                 <div className="flex flex-col grow space-y-1 justify-between w-full h-full sm:w-[240px]">
                     <Label>From</Label>
@@ -170,7 +168,7 @@ export function EditPanel({ txnIDs, queryParams }: Props) {
                 <div className="flex flex-col space-y-1 w-full sm:w-auto self-stretch justify-end">
                     <Button
                         disabled={txnIDs.length === 0}
-                        onClick={onEditSelected}>
+                        onClick={onEditSimilar}>
                         Edit Similar
                     </Button>
                     <Dialog>
@@ -188,7 +186,7 @@ export function EditPanel({ txnIDs, queryParams }: Props) {
                         </DialogContent>
                     </Dialog>
                 </div>
-            </CardContent>
-        </Card >
+            </div>
+        </div >
     );
 }

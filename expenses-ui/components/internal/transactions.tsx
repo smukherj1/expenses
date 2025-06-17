@@ -19,14 +19,29 @@ function formatDate(date: Date): string {
     return `${date.getFullYear()}/${mm}/${dd}`;
 }
 
-type Props = {
-    data: Transaction[]
-    selectedIDs: Set<string>
-    setSelectedIDs: (s: Set<string>) => void
-}
+type SelectableProps = {
+    data: Transaction[];
+    selectedIDs: Set<string>;
+    setSelectedIDs: (s: Set<string>) => void;
+    selectable: true;
+};
 
-export function TransactionsTable({ selectedIDs, setSelectedIDs, data }: Props) {
+type NonSelectableProps = {
+    data: Transaction[];
+    selectedIDs?: never;
+    setSelectedIDs?: never;
+    selectable?: false;
+};
+
+type Props = SelectableProps | NonSelectableProps;
+
+export function TransactionsTable({ data, ...props }: Props) {
+    const selectable = props.selectable === true && props.selectedIDs !== undefined && props.setSelectedIDs !== undefined;
+    const selectedIDs = selectable ? props.selectedIDs : new Set<string>();
+    const setSelectedIDs = selectable ? props.setSelectedIDs : (s: Set<string>) => { };
+
     const onTxnClick = (id: string) => {
+        if (!selectable) return;
         const newSelectedIDs = new Set(selectedIDs);
         const select = !selectedIDs.has(id);
         if (select) {
@@ -35,22 +50,28 @@ export function TransactionsTable({ selectedIDs, setSelectedIDs, data }: Props) 
             newSelectedIDs.delete(id);
         }
         setSelectedIDs(newSelectedIDs);
-    }
+    };
+
     const onAllTxnsClick = () => {
-        const selectAll = !(selectedIDs.size == data.length && data.length > 0);
+        if (!selectable) return;
+        const selectAll = !(selectedIDs.size === data.length && data.length > 0);
         const newSelectedIDs = new Set(data.filter(() => selectAll).map((txn: Transaction) => txn.id));
         setSelectedIDs(newSelectedIDs);
-    }
+    };
+
     return (
         <div className="w-full overflow-x-auto">
             <Table>
                 <TableHeader>
-                    <TableRow onClick={() => onAllTxnsClick()}>
-                        <TableHead>
-                            <Checkbox
-                                checked={selectedIDs.size == data.length && data.length > 0}
-                                aria-label="Chukudu" />
-                        </TableHead>
+                    <TableRow onClick={selectable ? onAllTxnsClick : undefined}>
+                        {selectable && (
+                            <TableHead>
+                                <Checkbox
+                                    checked={selectedIDs.size === data.length && data.length > 0}
+                                    aria-label="Select all transactions"
+                                />
+                            </TableHead>
+                        )}
                         <TableHead>Date</TableHead>
                         <TableHead>Description</TableHead>
                         <TableHead>Amount</TableHead>
@@ -60,12 +81,14 @@ export function TransactionsTable({ selectedIDs, setSelectedIDs, data }: Props) 
                 </TableHeader>
                 <TableBody>
                     {data.map((tx) => (
-                        <TableRow key={tx.id} onClick={() => onTxnClick(tx.id)}>
-                            <TableCell>
-                                <Checkbox
-                                    checked={selectedIDs.has(tx.id)}
-                                />
-                            </TableCell>
+                        <TableRow key={tx.id} onClick={selectable ? () => onTxnClick(tx.id) : undefined}>
+                            {selectable && (
+                                <TableCell>
+                                    <Checkbox
+                                        checked={selectedIDs.has(tx.id)}
+                                    />
+                                </TableCell>
+                            )}
                             <TableCell>{formatDate(tx.date)}</TableCell>
                             <TableCell>{tx.description}</TableCell>
                             <TableCell>{tx.amount}</TableCell>
@@ -87,5 +110,5 @@ export function TransactionsTable({ selectedIDs, setSelectedIDs, data }: Props) 
                 </TableBody>
             </Table>
         </div>
-    )
+    );
 }

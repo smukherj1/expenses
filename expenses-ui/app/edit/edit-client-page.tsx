@@ -12,8 +12,10 @@ export type Props = {
 
 export function EditClientPage({ txns, queryParams }: Props) {
     const [selectedIDs, setSelectedIDs] = useState<Set<string>>(new Set());
-    return (<>
+    return (<div className="bg-gray-50 dark:bg-gray-900 p-1 space-y-1">
         <EditPanel txnIDs={[...selectedIDs]} queryParams={queryParams} />
-        <TransactionsTable data={txns} selectedIDs={selectedIDs} setSelectedIDs={setSelectedIDs} />
-    </>)
+        <div className="bg-white dark:bg-gray-800">
+            <TransactionsTable data={txns} selectable selectedIDs={selectedIDs} setSelectedIDs={setSelectedIDs} />
+        </div>
+    </div>)
 }

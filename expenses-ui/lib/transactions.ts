@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 export type TxnQueryParams = {
+    ids?: string
     fromDate?: string
     toDate?: string
     description?: string
@@ -103,6 +104,40 @@ export async function FetchTransactions({ fromDate, toDate, description, descrip
             throw new Error(`Zod validation errors ${result.error.toString()}`);
         }
         return result.data.txns;
+    } catch (error) {
+        throw new Error(`Error fetching data ${error}`);
+    }
+}
+
+const SimilarTransactionsRespSchema = z.object({
+    selected_txns: z.array(TransactionSchema).optional().default(new Array()),
+    similar_txns: z.array(TransactionSchema).optional().default(new Array()),
+});
+export type SimilarTransactions = z.infer<typeof SimilarTransactionsRespSchema>;
+
+export async function FetchSimilarTransactions(q: TxnQueryParams): Promise<SimilarTransactions> {
+    let params = new URLSearchParams({
+        ids: q.ids ?? ""
+    });
+    const url = `http://localhost:4000/txns/similar?${params.toString()}`;
+    try {
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! Response: ${response.status} ${await response.text()}`);
+        }
+
+        const json = await response.json();
+        const result = SimilarTransactionsRespSchema.safeParse(json);
+        if (!result.success) {
+            throw new Error(`Zod validation errors ${result.error.toString()}`);
+        }
+        return result.data;
     } catch (error) {
         throw new Error(`Error fetching data ${error}`);
     }
