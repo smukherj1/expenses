@@ -17,6 +17,8 @@ export default function EditSimilarClientPage({ txns, queryParams }: Props) {
     const [selectedIDs, setSelectedIDs] = useState<Set<string>>(new Set());
     return (
         <div className="flex flex-col w-full p-1 space-y-1 bg-gray-50 dark:bg-gray-900 min-h-screen">
+            <EditPanel txnIDs={[...selectedIDs]} queryParams={queryParams} />
+
             {/* Selected Transactions Section */}
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-3">
                 <Label className="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-4 block">Selected Transactions</Label>
@@ -24,8 +26,6 @@ export default function EditSimilarClientPage({ txns, queryParams }: Props) {
                     <TransactionsTable data={txns.selected_txns} />
                 </ScrollArea>
             </div>
-
-            <EditPanel txnIDs={[...selectedIDs]} queryParams={queryParams} />
 
             {/* Similar Transactions Section */}
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-3">

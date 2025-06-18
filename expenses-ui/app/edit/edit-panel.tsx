@@ -94,13 +94,13 @@ export function EditPanel({ txnIDs, queryParams }: Props) {
     );
     const onEditSimilar = () => {
         const params = new URLSearchParams({
-            txnIds: txnIDs.join(" ")
+            ids: txnIDs.join(" ")
         });
-        router.push(`${pathname}/similar?${params.toString()}`);
+        router.push(`/edit/similar?${params.toString()}`);
     };
     return (
         <div className="flex flex-col bg-white dark:bg-gray-800 w-full p-3 space-y-2">
-            <Label className="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-4 block">Search for transactions</Label>
+            <Label className="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-4 block">Search and Edit</Label>
             <div className="flex flex-col h-20 justify-between items-start sm:flex-row flex-wrap sm:items-end gap-4 p-2 rounded-lg">
                 {/* From Date Selector */}
                 <div className="flex flex-col grow space-y-1 justify-between w-full h-full sm:w-[240px]">

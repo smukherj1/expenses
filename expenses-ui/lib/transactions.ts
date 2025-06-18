@@ -87,13 +87,14 @@ export async function FetchTransactions({ fromDate, toDate, description, descrip
 
     const url = `http://localhost:4000/txns?${params.toString()}`;
     try {
+        console.log(`FetchTransactions url= ${url}`);
         const response = await fetch(url, {
             method: 'GET',
             headers: {
                 'Content-Type': 'application/json',
             },
         });
-
+        console.log(`FetchTransactions response=${response}`);
         if (!response.ok) {
             throw new Error(`HTTP error! Response: ${response.status} ${await response.text()}`);
         }
