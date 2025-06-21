@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"regexp"
 	"strings"
 	"time"
@@ -118,10 +119,6 @@ type TxnQuery struct {
 }
 
 func (tq *TxnQuery) validate() error {
-	var defaultTxn TxnQuery
-	if *tq == defaultTxn {
-		return fmt.Errorf("all fields were unspecified")
-	}
 	if tq.Description != nil {
 		if l := len(*tq.Description); l > DescLimit {
 			return fmt.Errorf("description too long, got length %v, want <= %v", l, DescLimit)
@@ -162,6 +159,95 @@ func (tq *TxnQuery) validate() error {
 	}
 
 	return nil
+}
+
+type clausesOpts struct {
+	prevArgs int
+	tableID  string
+}
+
+type clauseOpt func(o *clausesOpts)
+
+func WithPrevArgs(p int) clauseOpt {
+	return func(o *clausesOpts) {
+		o.prevArgs = p
+	}
+}
+
+func WithTableID(id string) clauseOpt {
+	return func(o *clausesOpts) {
+		o.tableID = id
+	}
+}
+
+func (tq *TxnQuery) asClauses(opts ...clauseOpt) ([]string, []any, error) {
+	var copts clausesOpts
+	for _, o := range opts {
+		o(&copts)
+	}
+	var clauses []string
+	var qArgs []any
+	argCount := func() int {
+		return len(qArgs) + 1 + copts.prevArgs
+	}
+
+	clauses = append(clauses, fmt.Sprintf("%vID >= %v", copts.tableID, tq.StartID))
+	if tq.FromDate != nil {
+		ds := tq.FromDate.Format(dateQueryFmt)
+		clauses = append(clauses, fmt.Sprintf("%vDATE >= $%v", copts.tableID, argCount()))
+		qArgs = append(qArgs, ds)
+	}
+	if tq.ToDate != nil {
+		ds := tq.ToDate.Format(dateQueryFmt)
+		clauses = append(clauses, fmt.Sprintf("%vDATE <= $%v", copts.tableID, argCount()))
+		qArgs = append(qArgs, ds)
+	}
+	if tq.Description != nil {
+		if tq.DescOp == OpMatch {
+			clauses = append(clauses, fmt.Sprintf("%vDESCRIPTION ILIKE $%v", copts.tableID, argCount()))
+		} else if tq.DescOp == OpNotMatch {
+			clauses = append(clauses, fmt.Sprintf("%vDESCRIPTION NOT ILIKE $%v", copts.tableID, argCount()))
+		} else {
+			return nil, nil, fmt.Errorf("unsupported query op '%v' for description", tq.DescOp)
+		}
+		qArgs = append(qArgs, "%"+*tq.Description+"%")
+	}
+	if tq.Source != nil {
+		if tq.SourceOp == OpMatch {
+			clauses = append(clauses, fmt.Sprintf("%vSOURCE ILIKE $%v", copts.tableID, argCount()))
+		} else if tq.SourceOp == OpNotMatch {
+			clauses = append(clauses, fmt.Sprintf("%vSOURCE NOT ILIKE $%v", copts.tableID, argCount()))
+		} else {
+			return nil, nil, fmt.Errorf("unsupported query op '%v' for source", tq.SourceOp)
+		}
+		qArgs = append(qArgs, "%"+*tq.Source+"%")
+	}
+	if tq.AmountCents != nil {
+		clauses = append(clauses, fmt.Sprintf("%vAMOUNT_CENTS = $%v", copts.tableID, argCount()))
+		qArgs = append(qArgs, *tq.AmountCents)
+	}
+	if tq.Tags != nil {
+		if tq.TagsOp == OpMatch {
+			clauses = append(clauses, fmt.Sprintf("%vTAGS @> $%v", copts.tableID, argCount()))
+		} else if tq.TagsOp == OpNotMatch {
+			clauses = append(
+				clauses,
+				fmt.Sprintf("((%vTAGS IS NULL) OR (CARDINALITY(%vTAGS) = 0) OR (NOT (%vTAGS && $%v)))",
+					copts.tableID,
+					copts.tableID,
+					copts.tableID,
+					argCount()),
+			)
+		} else {
+			return nil, nil, fmt.Errorf("unsupported query op '%v' for tags", tq.TagsOp)
+		}
+		qArgs = append(qArgs, pq.Array(*tq.Tags))
+	}
+	if tq.TagsOp == OpEmpty {
+		clauses = append(clauses,
+			fmt.Sprintf("((%vTAGS IS NULL) OR (CARDINALITY(%vTAGS) = 0))", copts.tableID, copts.tableID))
+	}
+	return clauses, qArgs, nil
 }
 
 type Storage struct {
@@ -349,71 +435,26 @@ func (s *Storage) TxnRemoveTags(ctx context.Context, ids []int64, tags []string)
 	return nil
 }
 
+func clausesAsQuery(clauses []string) string {
+	if len(clauses) > 0 {
+		return strings.Join(clauses, " AND ")
+	}
+	return "TRUE"
+}
+
 func (s *Storage) QueryTxns(ctx context.Context, tq *TxnQuery) ([]Txn, error) {
 	if err := tq.validate(); err != nil {
 		return nil, err
 	}
 	q := `SELECT ID, DATE, DESCRIPTION, AMOUNT_CENTS, SOURCE, TAGS
 FROM TRANSACTIONS WHERE `
-	var qArgs []any
-	qCounter := 1
-	clauses := []string{fmt.Sprint("ID >= ", tq.StartID)}
-	if tq.FromDate != nil {
-		ds := tq.FromDate.Format(dateQueryFmt)
-		clauses = append(clauses, fmt.Sprint("DATE >= $", qCounter))
-		qCounter += 1
-		qArgs = append(qArgs, ds)
+	clauses, args, err := tq.asClauses()
+	if err != nil {
+		return nil, err
 	}
-	if tq.ToDate != nil {
-		ds := tq.ToDate.Format(dateQueryFmt)
-		clauses = append(clauses, fmt.Sprint("DATE <= $", qCounter))
-		qCounter += 1
-		qArgs = append(qArgs, ds)
-	}
-	if tq.Description != nil {
-		if tq.DescOp == OpMatch {
-			clauses = append(clauses, fmt.Sprint("DESCRIPTION ILIKE $", qCounter))
-		} else if tq.DescOp == OpNotMatch {
-			clauses = append(clauses, fmt.Sprint("DESCRIPTION NOT ILIKE $", qCounter))
-		} else {
-			return nil, fmt.Errorf("unsupported query op '%v' for description", tq.DescOp)
-		}
-		qArgs = append(qArgs, "%"+*tq.Description+"%")
-		qCounter += 1
-	}
-	if tq.Source != nil {
-		if tq.SourceOp == OpMatch {
-			clauses = append(clauses, fmt.Sprint("SOURCE ILIKE $", qCounter))
-		} else if tq.SourceOp == OpNotMatch {
-			clauses = append(clauses, fmt.Sprint("SOURCE NOT ILIKE $", qCounter))
-		} else {
-			return nil, fmt.Errorf("unsupported query op '%v' for source", tq.SourceOp)
-		}
-		qArgs = append(qArgs, "%"+*tq.Source+"%")
-		qCounter += 1
-	}
-	if tq.AmountCents != nil {
-		clauses = append(clauses, fmt.Sprint("AMOUNT_CENTS = $", qCounter))
-		qCounter += 1
-		qArgs = append(qArgs, *tq.AmountCents)
-	}
-	if tq.Tags != nil {
-		if tq.TagsOp == OpMatch {
-			clauses = append(clauses, fmt.Sprint("TAGS @> $", qCounter))
-		} else if tq.TagsOp == OpNotMatch {
-			clauses = append(clauses, fmt.Sprint("((TAGS IS NULL) OR (CARDINALITY(TAGS) = 0) OR (NOT (TAGS && $", qCounter, ")))"))
-		} else {
-			return nil, fmt.Errorf("unsupported query op '%v' for tags", tq.TagsOp)
-		}
-		qCounter += 1
-		qArgs = append(qArgs, pq.Array(*tq.Tags))
-	}
-	if tq.TagsOp == OpEmpty {
-		clauses = append(clauses, "((TAGS IS NULL) OR (CARDINALITY(TAGS) = 0))")
-	}
-	q += strings.Join(clauses, " AND ")
+	q += clausesAsQuery(clauses)
 	q += fmt.Sprint(" ORDER BY ID ASC LIMIT ", tq.Limit)
-	rows, err := s.db.QueryContext(ctx, q, qArgs...)
+	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("error querying for transactions: %w", err)
 	}
@@ -443,7 +484,15 @@ type SimilarTxns struct {
 	Similar  []Txn
 }
 
-func (s *Storage) QuerySimilarTxns(ctx context.Context, ids []int64) (SimilarTxns, error) {
+func (s *Storage) QuerySimilarTxns(ctx context.Context, ids []int64, tq *TxnQuery) (SimilarTxns, error) {
+	if err := tq.validate(); err != nil {
+		return SimilarTxns{}, err
+	}
+	clauses, cargs, err := tq.asClauses(WithPrevArgs(1), WithTableID("t."))
+	if err != nil {
+		return SimilarTxns{}, err
+	}
+
 	q := `
 	WITH
     SelectedTransactions AS (
@@ -452,6 +501,8 @@ func (s *Storage) QuerySimilarTxns(ctx context.Context, ids []int64) (SimilarTxn
 			t.DATE,
 			t.DESCRIPTION,
 			t.AMOUNT_CENTS,
+			t.SOURCE,
+			t.TAGS,
 			t.DESC_EMBEDDING
 		FROM TRANSACTIONS AS t
 		WHERE t.ID = ANY($1::BIGINT[])
@@ -464,15 +515,18 @@ func (s *Storage) QuerySimilarTxns(ctx context.Context, ids []int64) (SimilarTxn
             t.ID,
             t.DATE,
             t.DESCRIPTION,
-            t.AMOUNT_CENTS
+            t.AMOUNT_CENTS,
+			t.SOURCE,
+			t.TAGS
         FROM
             TRANSACTIONS AS t
         WHERE
-		    (SELECT avg_desc_embedding FROM AvgDescEmbedding) IS NOT NULL
+            (SELECT avg_desc_embedding FROM AvgDescEmbedding) IS NOT NULL
             AND t.ID NOT IN (SELECT ID FROM SelectedTransactions)
+            AND (` + clausesAsQuery(clauses) + `)
         ORDER BY
             t.DESC_EMBEDDING <=> (SELECT avg_desc_embedding FROM AvgDescEmbedding)
-        LIMIT 40
+        LIMIT ` + fmt.Sprint(tq.Limit) + `
     )
 
 SELECT
@@ -480,6 +534,8 @@ SELECT
     DATE,
     DESCRIPTION,
     AMOUNT_CENTS,
+	SOURCE,
+	TAGS,
     0 AS QueryType
 FROM
     SelectedTransactions
@@ -491,12 +547,18 @@ SELECT
     DATE,
     DESCRIPTION,
     AMOUNT_CENTS,
+	SOURCE,
+	TAGS,
     1 AS QueryType
 FROM
     SimilarTransactions
 ;
 	`
-	rows, err := s.db.QueryContext(ctx, q, pq.Array(ids))
+	var args []any
+	args = append(args, pq.Array(ids))
+	args = append(args, cargs...)
+	log.Printf("SimilarTxns with %v args, q=%v", len(args), q)
+	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return SimilarTxns{}, fmt.Errorf("error querying similar txns: %w", err)
 	}
@@ -505,7 +567,14 @@ FROM
 	for rows.Next() {
 		var qType int
 		var txn Txn
-		if err := rows.Scan(&txn.ID, &txn.Date, &txn.Description, &txn.AmountCents, &qType); err != nil {
+		if err := rows.Scan(
+			&txn.ID,
+			&txn.Date,
+			&txn.Description,
+			&txn.AmountCents,
+			&txn.Source,
+			(*pq.StringArray)(&txn.Tags),
+			&qType); err != nil {
 			return SimilarTxns{}, fmt.Errorf("error scanning similar txn row from database: %w", err)
 		}
 		switch qType {

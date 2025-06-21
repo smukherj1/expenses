@@ -5,12 +5,12 @@ services:
     ports:
       - 4000:4000
   adminer:
-    image: adminer:5.2.1
+    image: docker.io/adminer:5.2.1
     restart: always
     ports:
       - 8080:8080
   db:
-    image: pgvector/pgvector:0.8.0-pg17
+    image: docker.io/pgvector/pgvector:0.8.0-pg17
     restart: always
     ports:
       - 5432:5432
