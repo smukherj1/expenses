@@ -48,19 +48,19 @@ def rbc_mastercard():
   _upload_df(df, "RBC_MASTERCARD")
 
 
-def _cibc_amount_to_cents(amount: float) -> int:
+def _cibc_transform_amount(amount: float) -> float:
   if pd.isna(amount):
     return 0
-  return int(amount * 100)
+  return amount
 
 
 def cibc():
   df = pd.read_csv("data/cibc.csv")
   df["Date"] = pd.to_datetime(df["Date"], format="%Y-%m-%d",
                               errors='raise').dt.strftime("%Y/%m/%d")
-  debit_cents = df["Debit"].apply(_cibc_amount_to_cents)
-  credit_cents = df["Credit"].apply(_cibc_amount_to_cents)
-  df["Amount"] = -1 * debit_cents + credit_cents
+  debits = df["Debit"].apply(_cibc_transform_amount)
+  credits = df["Credit"].apply(_cibc_transform_amount)
+  df["Amount"] = -1 * debits + credits
   _upload_df(df, "CIBC_VISA")
 
 
@@ -70,13 +70,12 @@ def _amex_transform_date(date: str) -> str:
   return datetime.strptime(date, "%d %b. %Y").strftime("%Y/%m/%d")
 
 
-def _amex_transform_amount(amount: str) -> int:
+def _amex_transform_amount(amount: str) -> str:
   amount = amount.replace("$", "").replace(",", "")
-  dollars, cents = amount.split(".")
-  pos, dollars, cents = not dollars.startswith("-"), abs(
-      int(dollars)), int(cents)
-  amount_cents = dollars * 100 + cents if pos else -(dollars * 100 + cents)
-  return amount_cents
+  # Amex reports expenses as positive and payments as negative.
+  if amount.startswith("-"):
+    return amount[1:]
+  return "-" + amount
 
 
 def amex():
@@ -89,5 +88,5 @@ def amex():
 if __name__ == "__main__":
   # rbc_chequing()
   # rbc_mastercard()
-  cibc()
+  # cibc()
   amex()
