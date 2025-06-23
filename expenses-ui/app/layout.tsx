@@ -3,7 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
 import NavMenu from "@/components/internal/navigation-menu";
-import { Toaster } from "@/components/ui/sonner"
+import { Toaster } from "@/components/ui/sonner";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -32,7 +32,7 @@ export default function RootLayout({
       >
         <NavMenu />
         <main>{children}</main>
-        <Toaster />
+        <Toaster expand={false} position="top-center" />
       </body>
     </html>
   );
