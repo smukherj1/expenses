@@ -15,9 +15,16 @@ type Props = {
 
 export default function EditSimilarClientPage({ txns, queryParams }: Props) {
   const [selectedIDs, setSelectedIDs] = useState<Set<string>>(new Set());
+  const onEditSubmit = () => {
+    setSelectedIDs(new Set());
+  };
   return (
     <div className="flex flex-col w-full p-1 space-y-1 bg-gray-50 dark:bg-gray-900 min-h-screen">
-      <EditPanel txnIDs={[...selectedIDs]} queryParams={queryParams} />
+      <EditPanel
+        txnIDs={[...selectedIDs]}
+        queryParams={queryParams}
+        onSubmit={onEditSubmit}
+      />
 
       {/* Selected Transactions Section */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-3">

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"regexp"
 	"strings"
 	"time"
@@ -19,8 +18,8 @@ const (
 	DescLimit    = 100
 	SourceLimit  = 100
 	DescEmbedLen = 768
-	MaxTags      = 30
-	TagSizeLimit = 10
+	MaxTags      = 10
+	TagSizeLimit = 30
 	dateQueryFmt = "2006-01-02"
 	OpMatch      = "match"
 	OpNotMatch   = "not-match"
@@ -56,7 +55,7 @@ func ValidateOp(op string) bool {
 	return false
 }
 
-func validateTags(tags []string) error {
+func ValidateTags(tags []string) error {
 	if l := len(tags); l > MaxTags {
 		return fmt.Errorf("invalid number of tags, got %v, want <= %v", l, MaxTags)
 	}
@@ -95,7 +94,7 @@ func (tx *Txn) validate() error {
 	if l := len(tx.Source); l == 0 || l > SourceLimit {
 		return fmt.Errorf("invalid source length, got %v, want >0 and <= %v", l, SourceLimit)
 	}
-	if err := validateTags(tx.Tags); err != nil {
+	if err := ValidateTags(tx.Tags); err != nil {
 		return err
 	}
 	if err := validateDescEmbedding(tx.DescEmbedding); err != nil {
@@ -142,11 +141,18 @@ func (tq *TxnQuery) validate() error {
 		}
 	}
 	if tq.Tags != nil {
-		if err := validateTags(*tq.Tags); err != nil {
+		if err := ValidateTags(*tq.Tags); err != nil {
 			return fmt.Errorf("error validating tags: %w", err)
 		}
 		if ok := ValidateOp(tq.TagsOp); !ok {
 			return fmt.Errorf("invalid tagsOp '%v'", tq.TagsOp)
+		}
+		if tq.TagsOp == OpEmpty {
+			return fmt.Errorf("tagsOp '%v' is invalid becauses tags was specified", tq.TagsOp)
+		}
+	} else if tq.TagsOp != "" {
+		if tq.TagsOp != OpEmpty && tq.TagsOp != OpMatch {
+			return fmt.Errorf("invalid tagsOp '%v', want %v|%v", tq.TagsOp, OpEmpty, OpMatch)
 		}
 	}
 	if tq.Limit < 0 || tq.Limit > 1000 {
@@ -242,8 +248,9 @@ func (tq *TxnQuery) asClauses(opts ...clauseOpt) ([]string, []any, error) {
 			return nil, nil, fmt.Errorf("unsupported query op '%v' for tags", tq.TagsOp)
 		}
 		qArgs = append(qArgs, pq.Array(*tq.Tags))
-	}
-	if tq.TagsOp == OpEmpty {
+	} else if tq.TagsOp == OpMatch {
+		clauses = append(clauses, fmt.Sprintf("CARDINALITY(%vTAGS) > 0", copts.tableID))
+	} else if tq.TagsOp == OpEmpty {
 		clauses = append(clauses,
 			fmt.Sprintf("((%vTAGS IS NULL) OR (CARDINALITY(%vTAGS) = 0))", copts.tableID, copts.tableID))
 	}
@@ -313,7 +320,7 @@ func (s *Storage) UpdateTxns(ctx context.Context, ids []int64, tu *TxnUpdates) e
 	var assigns []string
 	var vals []any
 	if tu.Tags != nil {
-		if err := validateTags(*tu.Tags); err != nil {
+		if err := ValidateTags(*tu.Tags); err != nil {
 			return fmt.Errorf("unable to update txns with invalid tags: %w", err)
 		}
 		if len(*tu.Tags) == 0 {
@@ -346,7 +353,7 @@ func (s *Storage) UpdateTxns(ctx context.Context, ids []int64, tu *TxnUpdates) e
 }
 
 func (s *Storage) TxnAddTags(ctx context.Context, ids []int64, tags []string) error {
-	if err := validateTags(tags); err != nil {
+	if err := ValidateTags(tags); err != nil {
 		return fmt.Errorf("error validating tags to be added: %w", err)
 	}
 	if len(ids) == 0 {
@@ -391,7 +398,7 @@ func (s *Storage) TxnAddTags(ctx context.Context, ids []int64, tags []string) er
 }
 
 func (s *Storage) TxnRemoveTags(ctx context.Context, ids []int64, tags []string) error {
-	if err := validateTags(tags); err != nil {
+	if err := ValidateTags(tags); err != nil {
 		return fmt.Errorf("error validating tags to be removed: %w", err)
 	}
 	if len(ids) == 0 {
@@ -557,7 +564,6 @@ FROM
 	var args []any
 	args = append(args, pq.Array(ids))
 	args = append(args, cargs...)
-	log.Printf("SimilarTxns with %v args, q=%v", len(args), q)
 	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return SimilarTxns{}, fmt.Errorf("error querying similar txns: %w", err)

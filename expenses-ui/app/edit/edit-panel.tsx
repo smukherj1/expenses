@@ -21,9 +21,10 @@ import DateSearchField from "./date-search-field";
 export type Props = {
   txnIDs: string[];
   queryParams: TxnQueryParams;
+  onSubmit: () => void;
 };
 
-export function EditPanel({ txnIDs, queryParams }: Props) {
+export function EditPanel({ txnIDs, queryParams, onSubmit }: Props) {
   const [fromDate, setFromDate] = useState<string>(queryParams.fromDate ?? "");
   const [toDate, setToDate] = useState<string>(queryParams.toDate ?? "");
   const [description, setDescription] = useState<string>(
@@ -63,7 +64,7 @@ export function EditPanel({ txnIDs, queryParams }: Props) {
     if (tags.length > 0) {
       params.set("tags", tags);
     }
-    if (tags.length > 0 || tagsOp == "empty") {
+    if (tags.length > 0 || tagsOp == "empty" || tagsOp == "match") {
       params.set("tagsOp", tagsOp);
     }
     return `${params.toString()}`;
@@ -139,11 +140,10 @@ export function EditPanel({ txnIDs, queryParams }: Props) {
               <DialogHeader>
                 <DialogTitle>Request Tag Changes</DialogTitle>
                 <DialogDescription>
-                  Add, remove or clear tags for the {txnIDs.length} selected
-                  transactions
+                  Add, remove or clear tags for the selected transactions
                 </DialogDescription>
               </DialogHeader>
-              <EditDialog txnIDs={txnIDs} tags={tags} />
+              <EditDialog txnIDs={txnIDs} tags={tags} onSubmit={onSubmit} />
             </DialogContent>
           </Dialog>
         </div>

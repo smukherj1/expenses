@@ -126,18 +126,6 @@ func validateDate(dateStr string) (time.Time, int, error) {
 	return date, http.StatusOK, nil
 }
 
-func validateTags(tags []string) error {
-	if len(tags) > storage.MaxTags {
-		return fmt.Errorf("tags limit exceeded, got %v tags, want <= %v", len(tags), storage.MaxTags)
-	}
-	for i, t := range tags {
-		if len(t) == 0 || len(t) > storage.TagSizeLimit {
-			return fmt.Errorf("length of tag at index %v was invalid, got length %v, want <= %v", i, len(t), storage.TagSizeLimit)
-		}
-	}
-	return nil
-}
-
 func validateDescription(desc string) error {
 	if len(desc) == 0 || len(desc) > storage.DescLimit {
 		return fmt.Errorf("invalid description, got length %v, want 0 < length <= %v", desc, storage.DescLimit)
@@ -232,7 +220,7 @@ func validateTxn(tx *txn, vopts ...validateTxnOption) (*validatedTxn, int, error
 		}
 		result.descEmbedding = tx.DescEmbedding
 	}
-	if err := validateTags(tx.Tags); err != nil {
+	if err := storage.ValidateTags(tx.Tags); err != nil {
 		return nil, http.StatusBadRequest, err
 	}
 	result.tags = tx.Tags
@@ -566,7 +554,7 @@ func (s *txnsServer) patchTags(w http.ResponseWriter, r *http.Request) {
 		respondf(w, http.StatusBadRequest, "request body missing field 'tags'")
 		return
 	}
-	if err := validateTags(ptx.Tags); err != nil {
+	if err := storage.ValidateTags(ptx.Tags); err != nil {
 		respondf(w, http.StatusBadRequest, "error validating tags in request: %v", err)
 		return
 	}

@@ -94,7 +94,7 @@ function addQueryParamsToUrl(
       urlParams.set("tagsOp", tagsOp ?? "");
     }
   }
-  if (tagsOp === "empty") {
+  if (tagsOp === "empty" || tagsOp === "match") {
     urlParams.set("tagsOp", tagsOp);
   }
 }
