@@ -173,3 +173,24 @@ export async function FetchSimilarTransactions(
     throw new Error(`Error fetching data ${error}`);
   }
 }
+
+const TxnAmountsSchema = z.object({
+  credits: z.number(),
+  debits: z.number(),
+});
+
+const TxnTagMetricSchema = z.object({
+  tag: z.string(),
+  value: z.number(),
+});
+
+const TxnOverviewSchema = z.object({
+  source: z.string().optional(),
+  tagged_ammounts: TxnAmountsSchema,
+  untagged_amounts: TxnAmountsSchema,
+  top_tags_by_count: TxnTagMetricSchema.optional(),
+  top_tags_by_credits: TxnTagMetricSchema.optional(),
+  top_tags_by_debits: TxnTagMetricSchema.optional(),
+});
+
+export type TxnOverview = z.infer<typeof TxnOverviewSchema>;
