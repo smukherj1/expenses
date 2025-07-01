@@ -1,4 +1,5 @@
 import { z } from "zod";
+import sql from "./db";
 
 export type TxnQueryParams = {
   ids?: string;
@@ -178,19 +179,138 @@ const TxnAmountsSchema = z.object({
   credits: z.number(),
   debits: z.number(),
 });
+const defaultAmounts: z.infer<typeof TxnAmountsSchema> = {
+  credits: 0,
+  debits: 0,
+};
 
-const TxnTagMetricSchema = z.object({
-  tag: z.string(),
-  value: z.number(),
-});
+export type TxnAmounts = {
+  credits: number;
+  debits: number;
+};
 
-const TxnOverviewSchema = z.object({
-  source: z.string().optional(),
-  tagged_ammounts: TxnAmountsSchema,
-  untagged_amounts: TxnAmountsSchema,
-  top_tags_by_count: TxnTagMetricSchema.optional(),
-  top_tags_by_credits: TxnTagMetricSchema.optional(),
-  top_tags_by_debits: TxnTagMetricSchema.optional(),
-});
+export type TxnTagMetrics = {
+  tag: string;
+  value: string;
+};
 
-export type TxnOverview = z.infer<typeof TxnOverviewSchema>;
+export type TxnOverview = {
+  source: string;
+  tagged_amounts: TxnAmounts | undefined;
+  untagged_amounts: TxnAmounts | undefined;
+  top_tags_by_credits: TxnTagMetrics | undefined;
+  top_tags_by_debits: TxnTagMetrics | undefined;
+};
+
+export type TxnOverviews = {
+  global: TxnOverview;
+  bySource: Map<string, TxnOverview>;
+};
+
+const TxnSourceOverviewsSchema = z.array(
+  z.object({
+    source: z.string(),
+    count: z.string(),
+    tagged_credits: z.string(),
+    tagged_debits: z.string(),
+    untagged_credits: z.string(),
+    untagged_debits: z.string(),
+  })
+);
+
+export async function FetchTransactionsOverview(): Promise<TxnOverview[]> {
+  try {
+    const json = await sql`
+WITH AllTxns AS (
+  SELECT
+  CASE WHEN AMOUNT_CENTS >= 0 THEN AMOUNT_CENTS ELSE 0 END AS CREDITS,
+  CASE WHEN AMOUNT_CENTS < 0 THEN -AMOUNT_CENTS ELSE 0 END AS DEBITS,
+  CASE WHEN CARDINALITY(TAGS) > 0 THEN TRUE ELSE FALSE END AS TAGGED,
+  SOURCE
+  FROM Transactions
+),
+CategorizedTxns AS (
+  SELECT
+  CASE WHEN TAGGED THEN CREDITS ELSE 0 END AS TAGGED_CREDITS,
+  CASE WHEN TAGGED THEN DEBITS ELSE 0 END AS TAGGED_DEBITS,
+  CASE WHEN TAGGED THEN 0 ELSE CREDITS END AS UNTAGGED_CREDITS,
+  CASE WHEN TAGGED THEN 0 ELSE DEBITS END AS UNTAGGED_DEBITS,
+  SOURCE
+  FROM AllTxns
+)
+
+SELECT
+  SOURCE,
+  COUNT(*) AS COUNT,
+  SUM(TAGGED_CREDITS) AS TAGGED_CREDITS,
+  SUM(TAGGED_DEBITS) AS TAGGED_DEBITS,
+  SUM(UNTAGGED_CREDITS) AS UNTAGGED_CREDITS,
+  SUM(UNTAGGED_DEBITS) AS UNTAGGED_DEBITS
+FROM CategorizedTxns
+GROUP BY SOURCE
+ORDER BY (
+  SUM(TAGGED_CREDITS)
+  + SUM(TAGGED_DEBITS)
+  + SUM(UNTAGGED_CREDITS)
+  + SUM(UNTAGGED_DEBITS)
+) DESC
+;
+    `;
+    const result = TxnSourceOverviewsSchema.safeParse(json);
+    if (!result.success) {
+      console.log(
+        `Error parsing response from server in FetchTransactionsOverview: ${result.error.toString()}`
+      );
+      throw result.error;
+    }
+    const txnOverviews = new Array<TxnOverview>();
+    const globalOverview: TxnOverview = {
+      source: "all",
+      tagged_amounts: {
+        credits: 0,
+        debits: 0,
+      },
+      untagged_amounts: {
+        credits: 0,
+        debits: 0,
+      },
+      top_tags_by_credits: undefined,
+      top_tags_by_debits: undefined,
+    };
+    for (const so of result.data) {
+      const to: TxnOverview = {
+        source: so.source,
+        tagged_amounts: {
+          credits: parseInt(so.tagged_credits, 10),
+          debits: parseInt(so.tagged_debits, 10),
+        },
+        untagged_amounts: {
+          credits: parseInt(so.untagged_credits, 10),
+          debits: parseInt(so.untagged_debits, 10),
+        },
+        top_tags_by_credits: undefined,
+        top_tags_by_debits: undefined,
+      };
+      if (
+        globalOverview.tagged_amounts != undefined &&
+        to.tagged_amounts != undefined
+      ) {
+        globalOverview.tagged_amounts.credits += to.tagged_amounts.credits;
+        globalOverview.tagged_amounts.debits += to.tagged_amounts.debits;
+      }
+
+      if (
+        globalOverview.untagged_amounts != undefined &&
+        to.untagged_amounts != undefined
+      ) {
+        globalOverview.untagged_amounts.credits += to.untagged_amounts.credits;
+        globalOverview.untagged_amounts.debits += to.untagged_amounts.debits;
+      }
+      txnOverviews.push(to);
+    }
+    return [globalOverview, ...txnOverviews];
+  } catch (error) {
+    console.log(`Error: FetchTransactionsOverview: ${error}`);
+    throw error;
+  }
+}

@@ -588,19 +588,6 @@ func (s *txnsServer) patchTags(w http.ResponseWriter, r *http.Request) {
 	respondf(w, http.StatusOK, "OK")
 }
 
-func (s *txnsServer) overview(w http.ResponseWriter, r *http.Request) {
-	o, err := s.db.TxnsOverviews(r.Context())
-	if err != nil {
-		respondf(w, http.StatusInternalServerError, "error fetching overview: %v", err)
-		return
-	}
-	respJSON, err := json.Marshal(o)
-	if err != nil {
-		respondf(w, http.StatusInternalServerError, "error converting response to JSON: %v", err)
-	}
-	respond(w, http.StatusOK, respJSON)
-}
-
 func corsHandler(w http.ResponseWriter, _ *http.Request) {
 	respondf(w, http.StatusOK, "")
 }
@@ -629,7 +616,6 @@ func main() {
 			r.Patch("/", ts.patchTags)
 		})
 		r.Get("/similar", ts.getSimilar)
-		r.Get("/overview", ts.overview)
 	})
 	addr := ":4000"
 	log.Println("Running txns server at", addr)
