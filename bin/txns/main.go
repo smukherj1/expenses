@@ -137,6 +137,9 @@ func validateSource(source string) error {
 	if len(source) == 0 || len(source) > storage.SourceLimit {
 		return fmt.Errorf("invalid source, got length %v, want 0 < length <= %v", len(source), storage.SourceLimit)
 	}
+	if source == "all" {
+		return fmt.Errorf("invalid source, got %v which is a reserved source name", source)
+	}
 	return nil
 }
 

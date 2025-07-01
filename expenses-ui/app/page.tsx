@@ -1,8 +1,4 @@
-import {
-  FetchTransactionsOverview,
-  TxnAmounts,
-  TxnOverview,
-} from "@/lib/transactions";
+import { FetchTransactionsOverview, TxnOverview } from "@/lib/transactions";
 import {
   Table,
   TableBody,
@@ -39,10 +35,9 @@ export default async function Home() {
   const formatAmount = (amountInCents?: number) => {
     return currencyFormatter.format((amountInCents ?? 0) / 100);
   };
+
   return (
     <div className="container mx-auto py-10">
-      {" "}
-      {/* Add some padding and center the table */}
       <h2 className="text-2xl font-bold mb-6">Transactions Overview</h2>
       <Table>
         <TableHeader>
@@ -52,6 +47,8 @@ export default async function Home() {
             <TableHead>Credits (Untagged)</TableHead>
             <TableHead>Debits (Tagged)</TableHead>
             <TableHead>Debits (Untagged)</TableHead>
+            <TableHead>Top Tags (Credits)</TableHead>
+            <TableHead>Top Tags (Debits)</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -87,6 +84,30 @@ export default async function Home() {
                     {debitsPercent(item.untagged_amounts?.debits, item)}
                   </div>
                 </div>
+              </TableCell>
+              <TableCell>
+                {/* Display Top Tags by Credits */}
+                {item.tag_metrics?.top_tags_by_credits.map((tag, tagIndex) => (
+                  <div
+                    key={tagIndex}
+                    className="flex justify-between items-center w-full"
+                  >
+                    <span>{tag.key}</span>
+                    <span>{formatAmount(tag.value)}</span>
+                  </div>
+                ))}
+              </TableCell>
+              <TableCell>
+                {/* Display Top Tags by Debits */}
+                {item.tag_metrics?.top_tags_by_debits.map((tag, tagIndex) => (
+                  <div
+                    key={tagIndex}
+                    className="flex justify-between items-center w-full"
+                  >
+                    <span>{tag.key}</span>
+                    <span>{formatAmount(tag.value)}</span>
+                  </div>
+                ))}
               </TableCell>
             </TableRow>
           ))}

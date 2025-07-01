@@ -189,22 +189,21 @@ export type TxnAmounts = {
   debits: number;
 };
 
+export type TxnMetric = {
+  key: string;
+  value: number;
+};
+
 export type TxnTagMetrics = {
-  tag: string;
-  value: string;
+  top_tags_by_credits: TxnMetric[];
+  top_tags_by_debits: TxnMetric[];
 };
 
 export type TxnOverview = {
   source: string;
-  tagged_amounts: TxnAmounts | undefined;
-  untagged_amounts: TxnAmounts | undefined;
-  top_tags_by_credits: TxnTagMetrics | undefined;
-  top_tags_by_debits: TxnTagMetrics | undefined;
-};
-
-export type TxnOverviews = {
-  global: TxnOverview;
-  bySource: Map<string, TxnOverview>;
+  tagged_amounts: TxnAmounts;
+  untagged_amounts: TxnAmounts;
+  tag_metrics: TxnTagMetrics;
 };
 
 const TxnSourceOverviewsSchema = z.array(
@@ -217,6 +216,120 @@ const TxnSourceOverviewsSchema = z.array(
     untagged_debits: z.string(),
   })
 );
+
+const TxnOverviewByTagsSchema = z.array(
+  z.object({
+    source: z.string(),
+    tag: z.string(),
+    credits: z.string(),
+    debits: z.string(),
+  })
+);
+
+function mergeTagMetrics(metrics: TxnMetric[]): TxnMetric[] {
+  const lookup = new Map<string, number>();
+  for (const m of metrics) {
+    const entry = lookup.get(m.key) ?? 0;
+    lookup.set(m.key, entry + m.value);
+  }
+  const result: TxnMetric[] = Array.from(lookup, (e) => {
+    return {
+      key: e[0],
+      value: e[1],
+    };
+  });
+  return result.sort((a, b) => b.value - a.value);
+}
+
+async function fetchTagsOverviewBySource(): Promise<
+  Map<string, TxnTagMetrics>
+> {
+  try {
+    const json = await sql`
+WITH AllTxns AS (
+  SELECT
+  CASE WHEN AMOUNT_CENTS >= 0 THEN AMOUNT_CENTS ELSE 0 END AS CREDITS,
+  CASE WHEN AMOUNT_CENTS < 0 THEN -AMOUNT_CENTS ELSE 0 END AS DEBITS,
+  SOURCE,
+  TAGS
+  FROM Transactions
+)
+
+SELECT
+  SOURCE,
+  UNNEST(TAGS) AS TAG,
+  SUM(CREDITS) AS CREDITS,
+  SUM(DEBITS) AS DEBITS
+FROM
+    AllTxns
+WHERE
+    TAGS IS NOT NULL AND CARDINALITY(TAGS) > 0
+GROUP BY
+    SOURCE, TAG
+
+UNION ALL
+
+SELECT
+  SOURCE,
+  '<untagged>' AS TAG,
+  SUM(CREDITS) AS CREDITS,
+  SUM(DEBITS) AS DEBITS
+FROM
+    AllTxns
+WHERE
+    TAGS IS NULL OR CARDINALITY(TAGS) = 0
+GROUP BY
+    SOURCE, TAG;
+;
+    `;
+    const result = TxnOverviewByTagsSchema.safeParse(json);
+    if (!result.success) {
+      console.log(
+        `Error parsing response from server in fetchTagsOverview: ${result.error.toString()}`
+      );
+      throw result.error;
+    }
+    const bySource = new Map<string, TxnTagMetrics>();
+    const allCredits: TxnMetric[] = [];
+    const allDebits: TxnMetric[] = [];
+    for (const r of result.data) {
+      const entry: TxnTagMetrics = bySource.get(r.source) ?? {
+        top_tags_by_credits: [],
+        top_tags_by_debits: [],
+      };
+      const c = {
+        key: r.tag,
+        value: parseInt(r.credits, 10),
+      };
+      const d = {
+        key: r.tag,
+        value: parseInt(r.debits, 10),
+      };
+
+      allCredits.push(c);
+      entry.top_tags_by_credits.push(c);
+      allDebits.push(d);
+      entry.top_tags_by_debits.push(d);
+      bySource.set(r.source, entry);
+    }
+    bySource.set("all", {
+      top_tags_by_credits: mergeTagMetrics(allCredits),
+      top_tags_by_debits: mergeTagMetrics(allDebits),
+    });
+    for (const [s, m] of bySource) {
+      m.top_tags_by_credits = m.top_tags_by_credits.sort(
+        (a, b) => b.value - a.value
+      );
+      m.top_tags_by_debits = m.top_tags_by_debits.sort(
+        (a, b) => b.value - a.value
+      );
+    }
+    return bySource;
+  } catch (error) {
+    console.log(`Error: fetchTagsOverview: ${error}`);
+    throw error;
+  }
+}
 
 export async function FetchTransactionsOverview(): Promise<TxnOverview[]> {
   try {
@@ -274,10 +387,19 @@ ORDER BY (
         credits: 0,
         debits: 0,
       },
-      top_tags_by_credits: undefined,
-      top_tags_by_debits: undefined,
+      tag_metrics: {
+        top_tags_by_credits: [],
+        top_tags_by_debits: [],
+      },
     };
+    const tagsBySource = await fetchTagsOverviewBySource();
+    const globalCredits = new Array<TxnMetric>();
+    const globalDebits = new Array<TxnMetric>();
     for (const so of result.data) {
+      const tagMetrics = tagsBySource.get(so.source);
+      if (tagMetrics == undefined) {
+        throw `query did not result any tag metrics for source ${so.source}`;
+      }
       const to: TxnOverview = {
         source: so.source,
         tagged_amounts: {
@@ -288,26 +410,24 @@ ORDER BY (
           credits: parseInt(so.untagged_credits, 10),
           debits: parseInt(so.untagged_debits, 10),
         },
-        top_tags_by_credits: undefined,
-        top_tags_by_debits: undefined,
+        tag_metrics: {
+          top_tags_by_credits: tagMetrics.top_tags_by_credits,
+          top_tags_by_debits: tagMetrics.top_tags_by_debits,
+        },
       };
-      if (
-        globalOverview.tagged_amounts != undefined &&
-        to.tagged_amounts != undefined
-      ) {
-        globalOverview.tagged_amounts.credits += to.tagged_amounts.credits;
-        globalOverview.tagged_amounts.debits += to.tagged_amounts.debits;
-      }
+      globalOverview.tagged_amounts.credits += to.tagged_amounts.credits;
+      globalOverview.tagged_amounts.debits += to.tagged_amounts.debits;
+      globalOverview.untagged_amounts.credits += to.untagged_amounts.credits;
+      globalOverview.untagged_amounts.debits += to.untagged_amounts.debits;
+      globalCredits.push(...to.tag_metrics.top_tags_by_credits);
+      globalDebits.push(...to.tag_metrics.top_tags_by_debits);
 
-      if (
-        globalOverview.untagged_amounts != undefined &&
-        to.untagged_amounts != undefined
-      ) {
-        globalOverview.untagged_amounts.credits += to.untagged_amounts.credits;
-        globalOverview.untagged_amounts.debits += to.untagged_amounts.debits;
-      }
       txnOverviews.push(to);
     }
+    globalOverview.tag_metrics.top_tags_by_credits =
+      mergeTagMetrics(globalCredits);
+    globalOverview.tag_metrics.top_tags_by_debits =
+      mergeTagMetrics(globalDebits);
     return [globalOverview, ...txnOverviews];
   } catch (error) {
     console.log(`Error: FetchTransactionsOverview: ${error}`);
