@@ -104,7 +104,7 @@ export async function FetchTransactions(
   q: TxnQueryParams
 ): Promise<Transaction[]> {
   let params = new URLSearchParams({
-    limit: "20",
+    limit: "50",
   });
   addQueryParamsToUrl(q, params);
 
@@ -146,7 +146,7 @@ export async function FetchSimilarTransactions(
 ): Promise<SimilarTransactions> {
   let params = new URLSearchParams({
     ids: q.ids ?? "",
-    limit: "40",
+    limit: "50",
   });
   addQueryParamsToUrl(q, params);
   const url = `http://localhost:4000/txns/similar?${params.toString()}`;

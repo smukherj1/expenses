@@ -460,7 +460,7 @@ FROM TRANSACTIONS WHERE `
 		return nil, err
 	}
 	q += clausesAsQuery(clauses)
-	q += fmt.Sprint(" ORDER BY ID ASC LIMIT ", tq.Limit)
+	q += fmt.Sprint(" ORDER BY DATE ASC LIMIT ", tq.Limit)
 	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("error querying for transactions: %w", err)
@@ -559,6 +559,7 @@ SELECT
     1 AS QueryType
 FROM
     SimilarTransactions
+ORDER BY DATE
 ;
 	`
 	var args []any
