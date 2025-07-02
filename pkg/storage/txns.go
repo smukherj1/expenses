@@ -27,7 +27,7 @@ const (
 )
 
 var (
-	descRegexp = regexp.MustCompile(`^[\w\s-]+$`)
+	descRegexp = regexp.MustCompile(`^[\w\s-&/\.,\*']+$`)
 	srcRegexp  = regexp.MustCompile(`^[\w\s-]+$`)
 	tagRegexp  = regexp.MustCompile(`^[\w\s-]+$`)
 	ValidOps   = fmt.Sprintf("%v|%v|%v", OpMatch, OpNotMatch, OpEmpty)

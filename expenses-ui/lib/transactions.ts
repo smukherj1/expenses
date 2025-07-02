@@ -306,10 +306,14 @@ GROUP BY
         value: parseInt(r.debits, 10),
       };
 
-      allCredits.push(c);
-      entry.top_tags_by_credits.push(c);
-      allDebits.push(d);
-      entry.top_tags_by_debits.push(d);
+      if (c.value > 0) {
+        allCredits.push(c);
+        entry.top_tags_by_credits.push(c);
+      }
+      if (d.value > 0) {
+        allDebits.push(d);
+        entry.top_tags_by_debits.push(d);
+      }
       bySource.set(r.source, entry);
     }
     bySource.set("all", {
