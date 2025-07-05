@@ -439,11 +439,22 @@ ORDER BY (
   }
 }
 
-/*
+const TxnOverviewsByYearSchema = z.array(
+  z.object({
+    year: z.number(),
+    tag: z.string(),
+    amount: z.string(),
+  })
+);
+export type TxnOverviewsByYear = z.infer<typeof TxnOverviewsByYearSchema>;
+
+export async function FetchYearlyTransactionsOverview(): Promise<TxnOverviewsByYear> {
+  try {
+    const json = await sql`
 SELECT
     EXTRACT(YEAR FROM DATE) AS YEAR,
     UNNEST(TAGS) AS TAG,
-    ROUND(SUM(AMOUNT_CENTS) * -1 / 100) AS YEARLY_EXPENSE
+    ROUND(SUM(AMOUNT_CENTS) * -1 / 100) AS AMOUNT
 FROM
     TRANSACTIONS
 WHERE
@@ -453,19 +464,19 @@ GROUP BY
     TAG
 ORDER BY
     YEAR ASC,
-    YEARLY_EXPENSE DESC;
-
-
-SELECT
-    EXTRACT(YEAR FROM DATE) AS YEAR,
-    ROUND(SUM(AMOUNT_CENTS) * -1 / 100) AS YEARLY_EXPENSE
-FROM
-    TRANSACTIONS
-WHERE
-    NOT ('transfer' = ANY(TAGS)) AND NOT ('salary' = ANY(TAGS))
-GROUP BY
-    YEAR
-ORDER BY
-    YEAR ASC,
-    YEARLY_EXPENSE DESC;
-*/
+    AMOUNT DESC;
+;
+    `;
+    const result = TxnOverviewsByYearSchema.safeParse(json);
+    if (!result.success) {
+      console.log(
+        `Error parsing response from server in FetchYearlyTransactionsOverview: ${result.error.toString()}`
+      );
+      throw result.error;
+    }
+    return result.data;
+  } catch (error) {
+    console.log(`Error: FetchYearlyTransactionsOverview: ${error}`);
+    throw error;
+  }
+}
