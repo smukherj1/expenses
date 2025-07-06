@@ -35,7 +35,7 @@
 
 - `expenses-ui/components/internal/navigation-menu.tsx` implements the main
   navigation panel part of the main layout in `expenses-ui/app/layout.tsx`.
-  When asked to add new tags, add them here.
+  When asked to add new panel tabs, add them here.
 
 - Always fetch data from storage in a server component which can instantiate a
   client component for reactive elements of the UI, examples:

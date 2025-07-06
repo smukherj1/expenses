@@ -452,7 +452,7 @@ export async function FetchYearlyTransactionsOverview(): Promise<TxnOverviewsByY
   try {
     const json = await sql`
 SELECT
-    EXTRACT(YEAR FROM DATE) AS YEAR,
+    CAST(EXTRACT(YEAR FROM DATE) AS INTEGER) AS YEAR,
     UNNEST(TAGS) AS TAG,
     ROUND(SUM(AMOUNT_CENTS) * -1 / 100) AS AMOUNT
 FROM
@@ -464,7 +464,7 @@ GROUP BY
     TAG
 ORDER BY
     YEAR ASC,
-    AMOUNT DESC;
+    AMOUNT DESC
 ;
     `;
     const result = TxnOverviewsByYearSchema.safeParse(json);
