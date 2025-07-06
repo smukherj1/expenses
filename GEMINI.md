@@ -27,6 +27,12 @@
 ## Web App: `expenses-ui`
 
 - NextJS app in typescript using tailwind CSS and shadcn UI components.
+
+- `expenses-ui/app/layout.tsx` and `expenses-ui/app/page.tsx` are the
+  entrypoints to the react components and layout of the app.
+
+- `expenses-ui/app/globals.css` contains global CSS.
+
 - `expenses-ui/lib/db.ts` initializes a connection to this database from
   the web app.
 
