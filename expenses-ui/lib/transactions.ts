@@ -458,7 +458,9 @@ SELECT
 FROM
     TRANSACTIONS
 WHERE
-    NOT ('transfer' = ANY(TAGS)) AND NOT ('salary' = ANY(TAGS))
+    NOT ('transfer' = ANY(TAGS))
+    AND NOT ('salary' = ANY(TAGS))
+    AND NOT ('tax' = ANY(TAGS))
 GROUP BY
     YEAR,
     TAG

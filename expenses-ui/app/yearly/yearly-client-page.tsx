@@ -21,13 +21,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useMemo, useState } from "react";
-import { LineChart, CartesianGrid, XAxis, YAxis, Line } from "recharts";
+import { useMemo, useState, useEffect } from "react";
+import { LineChart, CartesianGrid, XAxis, YAxis, Line, Cell } from "recharts";
 import { Checkbox } from "@/components/ui/checkbox";
 
 type YearlyData = {
   year: number;
-  [key: string]: number | string;
+  amountByTag: Map<string, number>;
 };
 
 export default function YearlyClientPage({
@@ -40,30 +40,38 @@ export default function YearlyClientPage({
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [pieChartYear, setPieChartYear] = useState<number | undefined>();
 
-  const { lineChartData, pieChartData, years, tags } = useMemo(() => {
+  // Memoize the base computed values from props
+  const { years, tags, yearlyMap } = useMemo(() => {
     const yearlyMap: Map<number, YearlyData> = new Map();
     const tagsSet: Set<string> = new Set();
     data.forEach((item) => {
       tagsSet.add(item.tag);
       if (!yearlyMap.has(item.year)) {
-        yearlyMap.set(item.year, { year: item.year });
+        yearlyMap.set(item.year, { year: item.year, amountByTag: new Map() });
       }
       const yearData = yearlyMap.get(item.year)!;
-      yearData[item.tag] = parseFloat(item.amount);
+      yearData.amountByTag.set(item.tag, parseFloat(item.amount));
     });
-
     const allYears = Array.from(yearlyMap.keys()).sort();
     const allTags = Array.from(tagsSet);
+    return { years: allYears, tags: allTags, yearlyMap };
+  }, [data]);
 
-    if (selectedTags.length === 0) {
-      setSelectedTags(allTags);
+  // Use useEffect for side-effects like initializing state
+  useEffect(() => {
+    // Set all tags as selected by default when the component mounts or tags change
+    if (tags.length > 0) {
+      setSelectedTags(tags);
     }
-
-    if (pieChartYear === undefined && allYears.length > 0) {
-      setPieChartYear(allYears[allYears.length - 1]);
+    // Set the pie chart to the most recent year by default
+    if (pieChartYear === undefined && years.length > 0) {
+      setPieChartYear(years[years.length - 1]);
     }
+  }, [tags, years]);
 
-    const filteredYears = allYears.filter((year) => {
+  // Memoize the derived chart data based on state
+  const { lineChartData, pieChartData } = useMemo(() => {
+    const filteredYears = years.filter((year) => {
       if (startYear && year < startYear) return false;
       if (endYear && year > endYear) return false;
       return true;
@@ -72,27 +80,35 @@ export default function YearlyClientPage({
     const lineChartData = filteredYears.map((year) => {
       const yearData = yearlyMap.get(year)!;
       const total = selectedTags.reduce((acc, tag) => {
-        return acc + ((yearData[tag] as number) || 0);
+        return acc + ((yearData.amountByTag.get(tag) as number) || 0);
       }, 0);
       return { year, total };
     });
 
     const pieChartData =
       pieChartYear && yearlyMap.has(pieChartYear)
-        ? Object.entries(yearlyMap.get(pieChartYear)!)
-            .filter(
-              ([key, value]) => key !== "year" && typeof value === "number"
-            )
-            .map(([name, value]) => ({ name, value: value as number }))
+        ? Array.from(yearlyMap.get(pieChartYear)!.amountByTag.entries()).map(
+            ([tag, amount]) => ({ name: tag, value: amount as number })
+          )
         : [];
+    return { lineChartData, pieChartData };
+  }, [startYear, endYear, selectedTags, pieChartYear, years, yearlyMap]);
 
-    return {
-      lineChartData,
-      pieChartData,
-      years: allYears,
-      tags: allTags,
+  const chartConfig = useMemo(() => {
+    type ConfigData = {
+      label: string;
+      color: string;
     };
-  }, [data, startYear, endYear, selectedTags, pieChartYear]);
+    const config = new Map<string, ConfigData>();
+    tags.forEach((tag, index) => {
+      config.set(tag, {
+        label: tag,
+        // Cycle through the 5 available chart colors from global.css
+        color: `var(--chart-${(index % 5) + 1})`,
+      });
+    });
+    return config;
+  }, [tags]);
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -153,9 +169,18 @@ export default function YearlyClientPage({
             ))}
           </div>
           <ChartContainer config={{}}>
-            <LineChart data={lineChartData}>
+            <LineChart
+              data={lineChartData}
+              margin={{ top: 20, right: 20, bottom: 20, left: 20 }}
+            >
               <CartesianGrid vertical={false} />
-              <XAxis dataKey="year" />
+              <XAxis
+                dataKey="year"
+                tickLine={false}
+                axisLine={false}
+                tickMargin={8}
+                tickFormatter={(value) => value.toString()}
+              />
               <YAxis />
               <ChartTooltip
                 cursor={false}
@@ -164,7 +189,9 @@ export default function YearlyClientPage({
               <Line
                 dataKey="total"
                 type="monotone"
-                stroke="hsl(var(--primary))"
+                stroke="var(--primary)"
+                strokeWidth={2}
+                dot={true}
               />
             </LineChart>
           </ChartContainer>
@@ -180,9 +207,9 @@ export default function YearlyClientPage({
         <CardContent>
           <Select
             onValueChange={(value) => setPieChartYear(parseInt(value))}
-            defaultValue={pieChartYear?.toString()}
+            value={pieChartYear?.toString()} // Controlled component
           >
-            <SelectTrigger>
+            <SelectTrigger className="mb-4">
               <SelectValue placeholder="Select Year" />
             </SelectTrigger>
             <SelectContent>
@@ -205,6 +232,13 @@ export default function YearlyClientPage({
                 nameKey="name"
                 innerRadius={60}
               >
+                {pieChartData.map((entry) => (
+                  <Cell
+                    key={`cell-${entry.name}`}
+                    fill={chartConfig.get(entry.name)?.color}
+                    className="stroke-background" // Uses your theme's background for the stroke
+                  />
+                ))}
                 <Label
                   content={({ viewBox }) => {
                     if (viewBox && "cx" in viewBox && "cy" in viewBox) {
@@ -244,4 +278,3 @@ export default function YearlyClientPage({
     </div>
   );
 }
-("");
