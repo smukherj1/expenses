@@ -9,11 +9,14 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import {
+  ChartConfig,
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
+  ChartLegend,
+  ChartLegendContent,
 } from "@/components/ui/chart";
-import { Label, Pie, PieChart } from "recharts";
+import { Pie, PieChart } from "recharts";
 import {
   Select,
   SelectContent,
@@ -85,30 +88,53 @@ export default function YearlyClientPage({
       return { year, total };
     });
 
-    const pieChartData =
+    const pieChartAllData =
       pieChartYear && yearlyMap.has(pieChartYear)
-        ? Array.from(yearlyMap.get(pieChartYear)!.amountByTag.entries()).map(
-            ([tag, amount]) => ({ name: tag, value: amount as number })
-          )
+        ? Array.from(yearlyMap.get(pieChartYear)!.amountByTag.entries())
+            .map(([tag, amount], index) => ({
+              tag: tag,
+              value: amount as number,
+              // Cycle through the 5 available chart colors from global.css
+              fill: `var(--chart-${(index % 5) + 1})`,
+            }))
+            .sort((a, b) => b.value - a.value)
         : [];
+    const pieTop4 = pieChartAllData.filter((_, index) => index < 4);
+    const pieRemaining = pieChartAllData
+      .filter((_, index) => index >= 4)
+      .reduce(
+        (acc, cur) => {
+          return {
+            tag: acc.tag,
+            value: acc.value + cur.value,
+            fill: acc.fill,
+          };
+        },
+        {
+          tag: "others",
+          value: 0,
+          fill: "var(--chart-5)",
+        }
+      );
+    const pieChartData = pieTop4;
+    pieChartData.push(pieRemaining);
     return { lineChartData, pieChartData };
   }, [startYear, endYear, selectedTags, pieChartYear, years, yearlyMap]);
 
-  const chartConfig = useMemo(() => {
+  const pieChartConfig = useMemo(() => {
     type ConfigData = {
       label: string;
       color: string;
     };
-    const config = new Map<string, ConfigData>();
-    tags.forEach((tag, index) => {
-      config.set(tag, {
+    const config: { [key: string]: ConfigData } = {} satisfies ChartConfig;
+    pieChartData.forEach(({ tag, fill }, index) => {
+      config[tag] = {
         label: tag,
-        // Cycle through the 5 available chart colors from global.css
-        color: `var(--chart-${(index % 5) + 1})`,
-      });
+        color: fill,
+      };
     });
     return config;
-  }, [tags]);
+  }, [tags, pieChartData]) satisfies ChartConfig;
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -220,7 +246,7 @@ export default function YearlyClientPage({
               ))}
             </SelectContent>
           </Select>
-          <ChartContainer config={{}}>
+          <ChartContainer config={pieChartConfig}>
             <PieChart>
               <ChartTooltip
                 cursor={false}
@@ -229,48 +255,13 @@ export default function YearlyClientPage({
               <Pie
                 data={pieChartData}
                 dataKey="value"
-                nameKey="name"
+                nameKey="tag"
                 innerRadius={60}
-              >
-                {pieChartData.map((entry) => (
-                  <Cell
-                    key={`cell-${entry.name}`}
-                    fill={chartConfig.get(entry.name)?.color}
-                    className="stroke-background" // Uses your theme's background for the stroke
-                  />
-                ))}
-                <Label
-                  content={({ viewBox }) => {
-                    if (viewBox && "cx" in viewBox && "cy" in viewBox) {
-                      return (
-                        <text
-                          x={viewBox.cx}
-                          y={viewBox.cy}
-                          textAnchor="middle"
-                          dominantBaseline="middle"
-                        >
-                          <tspan
-                            x={viewBox.cx}
-                            y={viewBox.cy}
-                            className="fill-foreground text-3xl font-bold"
-                          >
-                            {pieChartData
-                              .reduce((acc, curr) => acc + curr.value, 0)
-                              .toLocaleString()}
-                          </tspan>
-                          <tspan
-                            x={viewBox.cx}
-                            y={(viewBox.cy || 0) + 24}
-                            className="fill-muted-foreground"
-                          >
-                            Total
-                          </tspan>
-                        </text>
-                      );
-                    }
-                  }}
-                />
-              </Pie>
+              />
+              <ChartLegend
+                content={<ChartLegendContent nameKey="tag" payload={{}} />}
+                className="-translate-y-2 flex-wrap gap-2 *:basis-1/4 *:justify-center"
+              />
             </PieChart>
           </ChartContainer>
         </CardContent>
