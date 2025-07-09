@@ -164,17 +164,7 @@ export default function YearlyClientPage({
         </CardContent>
       </Card>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card>
-          <CardHeader>
-            <CardTitle>Yearly Transactions</CardTitle>
-            <CardDescription>
-              Line chart of transactions by year
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <YearlyLineChart data={lineChartData} />
-          </CardContent>
-        </Card>
+        <YearlyLineChart data={lineChartData} />
         <Card>
           <CardHeader>
             <CardTitle>Tags Distribution</CardTitle>
