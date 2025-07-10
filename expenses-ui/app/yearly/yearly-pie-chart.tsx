@@ -24,6 +24,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export type PieChartEntry = {
   tag: string;
@@ -84,6 +85,34 @@ function clamp(
   return max;
 }
 
+function YearSelector({
+  years,
+  selectedYear,
+  onYearChange,
+}: {
+  years: number[];
+  selectedYear: number | undefined;
+  onYearChange: (year: number) => void;
+}) {
+  return (
+    <Select
+      onValueChange={(value) => onYearChange(parseInt(value))}
+      value={selectedYear?.toString()}
+    >
+      <SelectTrigger className="mb-4">
+        <SelectValue placeholder="Select Year" />
+      </SelectTrigger>
+      <SelectContent>
+        {years.map((year) => (
+          <SelectItem key={year} value={year.toString()}>
+            {year}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
 export default function YearlyPieChart({ data }: Props) {
   const years = data.map((dataForYear) => dataForYear.year);
   const { minYear, maxYear } = minMaxFromYears(years);
@@ -136,46 +165,64 @@ export default function YearlyPieChart({ data }: Props) {
     };
   });
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Tags Distribution</CardTitle>
-        <CardDescription>Pie chart of tags for a selected year</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <Select
-          onValueChange={(value) => setPieChartYear(parseInt(value))}
-          value={pieChartYear?.toString()}
-        >
-          <SelectTrigger className="mb-4">
-            <SelectValue placeholder="Select Year" />
-          </SelectTrigger>
-          <SelectContent>
-            {years.map((year) => (
-              <SelectItem key={year} value={year.toString()}>
-                {year}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <ChartContainer config={config}>
-          <PieChart>
-            <ChartTooltip
-              cursor={false}
-              content={<ChartTooltipContent hideLabel />}
+    <Tabs defaultValue="pie">
+      <TabsList>
+        <TabsTrigger value="pie">Pie Chart</TabsTrigger>
+        <TabsTrigger value="table">Table</TabsTrigger>
+      </TabsList>
+      <TabsContent value="pie">
+        <Card>
+          <CardHeader>
+            <CardTitle>Tags Distribution Chart</CardTitle>
+            <CardDescription>
+              Breakdown of tags for a selected year
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <YearSelector
+              years={years}
+              selectedYear={pieChartYear}
+              onYearChange={setPieChartYear}
             />
-            <Pie
-              data={pieChartData}
-              dataKey="amount"
-              nameKey="tag"
-              innerRadius={60}
+            <ChartContainer config={config}>
+              <PieChart>
+                <ChartTooltip
+                  cursor={false}
+                  content={<ChartTooltipContent hideLabel />}
+                />
+                <Pie
+                  data={pieChartData}
+                  dataKey="amount"
+                  nameKey="tag"
+                  innerRadius={60}
+                />
+                <ChartLegend
+                  content={<ChartLegendContent nameKey="tag" payload={{}} />}
+                  className="-translate-y-2 flex-wrap gap-2 *:basis-1/4 *:justify-center"
+                />
+              </PieChart>
+            </ChartContainer>
+          </CardContent>
+        </Card>
+      </TabsContent>
+      <TabsContent value="table">
+        <Card>
+          <CardHeader>
+            <CardTitle>Tags Distribution Table</CardTitle>
+            <CardDescription>
+              Breakdown of tags for a selected year
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <YearSelector
+              years={years}
+              selectedYear={pieChartYear}
+              onYearChange={setPieChartYear}
             />
-            <ChartLegend
-              content={<ChartLegendContent nameKey="tag" payload={{}} />}
-              className="-translate-y-2 flex-wrap gap-2 *:basis-1/4 *:justify-center"
-            />
-          </PieChart>
-        </ChartContainer>
-      </CardContent>
-    </Card>
+            TODO: Display table here!
+          </CardContent>
+        </Card>
+      </TabsContent>
+    </Tabs>
   );
 }
