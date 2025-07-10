@@ -25,18 +25,18 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-type PieChartEntry = {
+export type PieChartEntry = {
   tag: string;
   amount: number;
   fill: string;
 };
 
-type TagAmount = {
+export type TagAmount = {
   tag: string;
   amount: number;
 };
 
-type YearlyData = {
+export type YearlyData = {
   year: number;
   amountByTag: TagAmount[];
 };
@@ -45,20 +45,53 @@ type Props = {
   data: YearlyData[];
 };
 
-export default function YearlyLineChart({ data }: Props) {
-  const years = data.map((dataForYear) => dataForYear.year);
-  const latestYear =
-    years.length == 0
-      ? undefined
-      : years.reduce((prev, cur) => {
-          if (prev == undefined) {
-            return cur;
-          }
-          return cur > prev ? cur : prev;
-        });
-  const [pieChartYear, setPieChartYear] = useState<number | undefined>(
-    latestYear
+type MinMaxYears = {
+  minYear: number | undefined;
+  maxYear: number | undefined;
+};
+
+function minMaxFromYears(years: number[]): MinMaxYears {
+  if (years.length == 0) {
+    return {
+      minYear: undefined,
+      maxYear: undefined,
+    };
+  }
+  return years.reduce(
+    (prev, cur) => {
+      return {
+        minYear: prev.minYear < cur ? prev.minYear : cur,
+        maxYear: prev.maxYear > cur ? prev.maxYear : cur,
+      };
+    },
+    {
+      minYear: years[0],
+      maxYear: years[0],
+    }
   );
+}
+
+function clamp(
+  val: number | undefined,
+  { minYear: min, maxYear: max }: MinMaxYears
+): number | undefined {
+  if (val === undefined || min === undefined || max === undefined) {
+    return undefined;
+  }
+  if (val >= min && val <= max) {
+    return val;
+  }
+  return max;
+}
+
+export default function YearlyPieChart({ data }: Props) {
+  const years = data.map((dataForYear) => dataForYear.year);
+  const { minYear, maxYear } = minMaxFromYears(years);
+  const [pieChartYear, setPieChartYear] = useState<number | undefined>(maxYear);
+  const selectedYear = clamp(pieChartYear, { minYear, maxYear });
+  if (selectedYear !== undefined && selectedYear !== pieChartYear) {
+    setPieChartYear(selectedYear);
+  }
   const selectedYearData = data.find((v) => v.year === pieChartYear);
   const numColors = 5;
   const pieChartAllData: PieChartEntry[] =
@@ -111,7 +144,7 @@ export default function YearlyLineChart({ data }: Props) {
       <CardContent>
         <Select
           onValueChange={(value) => setPieChartYear(parseInt(value))}
-          value={pieChartYear?.toString()} // Controlled component
+          value={pieChartYear?.toString()}
         >
           <SelectTrigger className="mb-4">
             <SelectValue placeholder="Select Year" />
@@ -132,7 +165,7 @@ export default function YearlyLineChart({ data }: Props) {
             />
             <Pie
               data={pieChartData}
-              dataKey="value"
+              dataKey="amount"
               nameKey="tag"
               innerRadius={60}
             />
