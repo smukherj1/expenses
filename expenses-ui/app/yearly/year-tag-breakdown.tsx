@@ -113,7 +113,7 @@ function YearSelector({
   );
 }
 
-export default function YearlyPieChart({ data }: Props) {
+export default function YearTagBreakdown({ data }: Props) {
   const years = data.map((dataForYear) => dataForYear.year);
   const { minYear, maxYear } = minMaxFromYears(years);
   const [pieChartYear, setPieChartYear] = useState<number | undefined>(maxYear);

@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/select";
 import { useMemo, useState, useEffect } from "react";
 import YearlyLineChart from "./yearly-line-chart";
-import YearlyPieChart from "./yearly-pie-chart";
+import YearTagBreakdown from "./year-tag-breakdown";
 
 type YearlyData = {
   year: number;
@@ -117,7 +117,7 @@ export default function YearlyClientPage({
       </Card>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <YearlyLineChart data={lineChartData} />
-        <YearlyPieChart data={pieChartData} />
+        <YearTagBreakdown data={pieChartData} />
       </div>
     </div>
   );
