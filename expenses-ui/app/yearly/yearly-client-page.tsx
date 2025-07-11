@@ -45,9 +45,6 @@ export default function YearlyClientPage({
 }: {
   data: TxnOverviewsByYear;
 }) {
-  const [startYear, setStartYear] = useState<number | undefined>();
-  const [endYear, setEndYear] = useState<number | undefined>();
-
   // Memoize the base computed values from props
   const { years, yearlyMap } = useMemo(() => {
     const yearlyMap: Map<number, YearlyData> = new Map();
@@ -61,6 +58,19 @@ export default function YearlyClientPage({
     const allYears = Array.from(yearlyMap.keys()).sort();
     return { years: allYears, yearlyMap };
   }, [data]);
+
+  const [startYear, setStartYear] = useState<number | undefined>();
+  const [endYear, setEndYear] = useState<number | undefined>();
+
+  useEffect(() => {
+    if (years.length > 0) {
+      setStartYear(years[0]);
+      setEndYear(years[years.length - 1]);
+    } else {
+      setStartYear(undefined);
+      setEndYear(undefined);
+    }
+  }, [years]);
 
   // Memoize the derived chart data based on state
   const { lineChartData, pieChartData } = useMemo(() => {
@@ -88,7 +98,10 @@ export default function YearlyClientPage({
       <Card>
         <CardContent>
           <div className="flex gap-4 mb-4">
-            <Select onValueChange={(value) => setStartYear(parseInt(value))}>
+            <Select
+              onValueChange={(value) => setStartYear(parseInt(value))}
+              value={startYear?.toString() || ""}
+            >
               <SelectTrigger>
                 <SelectValue placeholder="Start Year" />
               </SelectTrigger>
@@ -100,7 +113,10 @@ export default function YearlyClientPage({
                 ))}
               </SelectContent>
             </Select>
-            <Select onValueChange={(value) => setEndYear(parseInt(value))}>
+            <Select
+              onValueChange={(value) => setEndYear(parseInt(value))}
+              value={endYear?.toString() || ""}
+            >
               <SelectTrigger>
                 <SelectValue placeholder="End Year" />
               </SelectTrigger>
