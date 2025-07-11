@@ -24,6 +24,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export type PieChartEntry = {
@@ -219,7 +227,28 @@ export default function YearTagBreakdown({ data }: Props) {
               selectedYear={pieChartYear}
               onYearChange={setPieChartYear}
             />
-            TODO: Display table here!
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Tag</TableHead>
+                  <TableHead>Amount</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {selectedYearData?.amountByTag
+                  .sort((a, b) => b.amount - a.amount)
+                  .map((tagAmount, index) => (
+                    <TableRow key={index}>
+                      <TableCell className="font-medium">
+                        {tagAmount.tag}
+                      </TableCell>
+                      <TableCell>{`$ ${tagAmount.amount
+                        .toFixed(2)
+                        .toLocaleString()}`}</TableCell>
+                    </TableRow>
+                  ))}
+              </TableBody>
+            </Table>
           </CardContent>
         </Card>
       </TabsContent>
