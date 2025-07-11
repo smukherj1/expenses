@@ -122,7 +122,7 @@ export default function YearTagBreakdown({ data }: Props) {
     setPieChartYear(selectedYear);
   }
   const selectedYearData = data.find((v) => v.year === pieChartYear);
-  const numColors = 5;
+  const numColors = 8;
   const pieChartAllData: PieChartEntry[] =
     selectedYearData === undefined
       ? []
