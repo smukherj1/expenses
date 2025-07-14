@@ -69,12 +69,20 @@ export async function GetTransactions(
     conditions.push(lte(sql`ABS(${transactions.amountCents})`, amountCents));
   }
 
+  const asSQLArray = (tags: string[]): SQL => {
+    const sqlTags = tags.map((t) => sql`${t}`);
+    const joinedSqlTags = sql.join(sqlTags, sql`, `);
+    return sql`ARRAY[${joinedSqlTags}]::text[]`;
+  };
+
   if (hasTags && hasTags.length > 0) {
-    conditions.push(sql`${transactions.tags} && ${hasTags}`);
+    conditions.push(sql`${transactions.tags} && ${asSQLArray(hasTags)}`);
   }
 
   if (withoutTags && withoutTags.length > 0) {
-    conditions.push(sql`NOT (${transactions.tags} && ${withoutTags})`);
+    conditions.push(
+      sql`NOT (${transactions.tags} && ${asSQLArray(withoutTags)})`
+    );
   }
   if (noTags === true) {
     conditions.push(

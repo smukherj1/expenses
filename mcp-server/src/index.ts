@@ -9,74 +9,82 @@ import { GetTransactions } from "./transactions.js";
 const server = new McpServer({ name: "demo-server", version: "1.0.0" });
 
 server.registerTool(
-  "add",
-  {
-    title: "Addition Tool",
-    description: "Add two numbers",
-    inputSchema: { a: z.number(), b: z.number() },
-  },
-  async ({ a, b }) => ({
-    content: [{ type: "text", text: String(a + b) }],
-  })
-);
-
-server.registerTool(
   "get-transactions",
   {
     title: "Get Transactions Tool",
-    description: `Get transactions matching the query parameters provided as arguments.
-
-Arguents:
-  fromDate: If specified, only get transactions on or after this date.
-
-  toDate: If specified, only get transactions up to and including this date.
-
-  description: If specified, only get transactions whose descriptions contain the given value as a substring.
-             Matching is case insensitive.
-
-  fromAmount: If specified, only get transactions whose amounts are greater than or equal to the given value.
-
-  toAmount: If specified, only get transactions whose amounts are less than or equal to the given value.
-
-  hasTags: If specified, only get transactions with the given tags.
-
-  withoutTags: If specified, only get transactions that don't have the given tags.
-
-  noTags: If specified and true, only get transactions that don't have any tags.
-
-Returns:
-  Array of transactions where each transaction has the following fields:
-    date: Date the transaction occurred.
-    description: Details about the transaction, usually the name of the merchant.
-    amount: How much money was transacted.
-    type: Whether the transaction was a debit (i.e., money flowing out of the account) or
-          credit (i.e., money flowing into the account).
-    source: Identifies the account at a financial institution where the transaction happened.
-    tags: One or more tags the transaction was manually categorized into. Transactions tagged
-          as 'transfer' can be ignored because it's money moving between accounts.
-
-`,
+    description: "Get transactions matching the specified query parameters",
     inputSchema: {
-      fromDate: z.string().optional(),
-      toDate: z.string().optional(),
-      description: z.string().optional(),
-      fromAmount: z.number().optional(),
-      toAmount: z.number().optional(),
-      hasTags: z.array(z.string()).optional(),
-      withoutTags: z.array(z.string()).optional(),
-      noTags: z.boolean().optional(),
+      fromDate: z
+        .string()
+        .optional()
+        .describe("If specified, only get transactions on or after this date"),
+      toDate: z
+        .string()
+        .optional()
+        .describe(
+          "If specified, only get transactions up to and including this date"
+        ),
+      description: z
+        .string()
+        .optional()
+        .describe(
+          "If specified, only get transactions whose descriptions contain the given value as a substring (case insensitive)"
+        ),
+      fromAmount: z
+        .number()
+        .optional()
+        .describe(
+          "If specified, only get transactions whose amounts are greater than or equal to this value"
+        ),
+      toAmount: z
+        .number()
+        .optional()
+        .describe(
+          "If specified, only get transactions whose amounts are less than or equal to this value"
+        ),
+      hasTags: z
+        .array(z.string())
+        .optional()
+        .describe("If specified, only get transactions with these tags"),
+      withoutTags: z
+        .array(z.string())
+        .optional()
+        .describe(
+          "If specified, only get transactions that don't have these tags"
+        ),
+      noTags: z
+        .boolean()
+        .optional()
+        .describe("If true, only get transactions that don't have any tags"),
     },
     outputSchema: {
-      transactions: z.array(
-        z.object({
-          date: z.string(),
-          description: z.string(),
-          amount: z.string(),
-          type: z.enum(["credit", "debit"]),
-          source: z.string(),
-          tags: z.array(z.string()).optional(),
-        })
-      ),
+      transactions: z
+        .array(
+          z.object({
+            date: z.string().describe("Date the transaction occurred"),
+            description: z
+              .string()
+              .describe(
+                "Details about the transaction, usually the merchant name"
+              ),
+            amount: z.string().describe("How much money was transacted"),
+            type: z
+              .enum(["credit", "debit"])
+              .describe(
+                "Whether money flowed into (credit) or out of (debit) the account"
+              ),
+            source: z
+              .string()
+              .describe("Identifies the account at the financial institution"),
+            tags: z
+              .array(z.string())
+              .optional()
+              .describe(
+                "Manual categorization tags (transactions tagged as 'transfer' can be ignored)"
+              ),
+          })
+        )
+        .describe("Array of matching transactions"),
     },
     annotations: {
       idempotentHint: true,
@@ -124,15 +132,6 @@ Returns:
       };
     }
   }
-);
-
-server.registerResource(
-  "greeting",
-  new ResourceTemplate("greeting://{name}", { list: undefined }),
-  { title: "Greeting Resource", description: "Dynamic greeting generator" },
-  async (uri, { name }) => ({
-    contents: [{ uri: uri.href, text: `Hello, ${name}!` }],
-  })
 );
 
 const transport = new StdioServerTransport();
