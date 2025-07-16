@@ -4,23 +4,10 @@ import { transactions } from "./schema.js";
 
 // Define the interface for a transaction record
 type Transaction = {
-  date: string;
-  description: string;
+  year: number;
+  tag: string;
   amount: string;
-  source: string;
-  tags: string[] | null;
 };
-
-interface TransactionQueryParams {
-  fromDate?: string;
-  toDate?: string;
-  description?: string;
-  fromAmount?: number;
-  toAmount?: number;
-  hasTags?: string[];
-  withoutTags?: string[];
-  noTags?: boolean;
-}
 
 function dateAsYYYYMMDD(date: Date): string {
   const year = date.getFullYear();
@@ -29,83 +16,34 @@ function dateAsYYYYMMDD(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
-export async function GetTransactions(
-  params: TransactionQueryParams
-): Promise<{ transactions: Transaction[] }> {
-  const {
-    fromDate,
-    toDate,
-    description,
-    fromAmount,
-    toAmount,
-    hasTags,
-    withoutTags,
-    noTags,
-  } = params;
+function asSQLArray(tags: string[]): SQL {
+  const sqlTags = tags.map((t) => sql`${t}`);
+  const joinedSqlTags = sql.join(sqlTags, sql`, `);
+  return sql`ARRAY[${joinedSqlTags}]::text[]`;
+}
 
-  const conditions: SQL[] = [];
-
-  if (fromDate) {
-    const d = new Date(fromDate);
-    conditions.push(gte(transactions.date, dateAsYYYYMMDD(d)));
-  }
-
-  if (toDate) {
-    const d = new Date(toDate);
-    conditions.push(lte(transactions.date, dateAsYYYYMMDD(d)));
-  }
-
-  if (description) {
-    conditions.push(ilike(transactions.description, sql`%${description}%`));
-  }
-
-  if (fromAmount !== undefined) {
-    const amountCents = Math.round(fromAmount * 100);
-    conditions.push(gte(sql`ABS(${transactions.amountCents})`, amountCents));
-  }
-
-  if (toAmount !== undefined) {
-    const amountCents = Math.round(toAmount * 100);
-    conditions.push(lte(sql`ABS(${transactions.amountCents})`, amountCents));
-  }
-
-  const asSQLArray = (tags: string[]): SQL => {
-    const sqlTags = tags.map((t) => sql`${t}`);
-    const joinedSqlTags = sql.join(sqlTags, sql`, `);
-    return sql`ARRAY[${joinedSqlTags}]::text[]`;
-  };
-
-  if (hasTags && hasTags.length > 0) {
-    conditions.push(sql`${transactions.tags} && ${asSQLArray(hasTags)}`);
-  }
-
-  if (withoutTags && withoutTags.length > 0) {
-    conditions.push(
-      sql`NOT (${transactions.tags} && ${asSQLArray(withoutTags)})`
-    );
-  }
-  if (noTags === true) {
-    conditions.push(
-      sql`(${transactions.tags} IS NULL OR cardinality(${transactions.tags}) = 0)`
-    );
-  }
+export async function GetTransactions(): Promise<{
+  transactions: Transaction[];
+}> {
+  const conditions: SQL[] = [
+    lte(transactions.amountCents, 0),
+    sql`NOT (${transactions.tags} && ${asSQLArray(["transfer"])})`,
+  ];
 
   try {
     const query = db
       .select({
-        date: transactions.date,
-        description: transactions.description,
-        amount: sql<string>`ABS(ROUND(${transactions.amountCents} / 100, 2))`,
-        type: sql<
-          "credit" | "debit"
-        >`CASE WHEN ${transactions.amountCents} >= 0 THEN 'credit' ELSE 'debit' END`,
-        source: transactions.source,
-        tags: transactions.tags,
+        year: sql<number>`EXTRACT(YEAR FROM ${transactions.date})`,
+        tag: sql<string>`unnest(${transactions.tags})`,
+        amount: sql<string>`SUM(ROUND(ABS(${transactions.amountCents}) / 100, 2))`,
       })
       .from(transactions)
       .where(and(...conditions))
-      .orderBy(transactions.date)
-      .limit(1000);
+      .groupBy(
+        sql`EXTRACT(YEAR FROM ${transactions.date})`,
+        sql`unnest(${transactions.tags})`
+      )
+      .orderBy(sql`EXTRACT(YEAR FROM ${transactions.date}) DESC`);
     return {
       transactions: await query,
     };

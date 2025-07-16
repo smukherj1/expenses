@@ -9,108 +9,33 @@ import { GetTransactions } from "./transactions.js";
 const server = new McpServer({ name: "demo-server", version: "1.0.0" });
 
 server.registerTool(
-  "get-transactions",
+  "get-expenses",
   {
-    title: "Get Transactions Tool",
-    description: "Get transactions matching the specified query parameters",
-    inputSchema: {
-      fromDate: z
-        .string()
-        .optional()
-        .describe("If specified, only get transactions on or after this date"),
-      toDate: z
-        .string()
-        .optional()
-        .describe(
-          "If specified, only get transactions up to and including this date"
-        ),
-      description: z
-        .string()
-        .optional()
-        .describe(
-          "If specified, only get transactions whose descriptions contain the given value as a substring (case insensitive)"
-        ),
-      fromAmount: z
-        .number()
-        .optional()
-        .describe(
-          "If specified, only get transactions whose amounts are greater than or equal to this value"
-        ),
-      toAmount: z
-        .number()
-        .optional()
-        .describe(
-          "If specified, only get transactions whose amounts are less than or equal to this value"
-        ),
-      hasTags: z
-        .array(z.string())
-        .optional()
-        .describe("If specified, only get transactions with these tags"),
-      withoutTags: z
-        .array(z.string())
-        .optional()
-        .describe(
-          "If specified, only get transactions that don't have these tags"
-        ),
-      noTags: z
-        .boolean()
-        .optional()
-        .describe("If true, only get transactions that don't have any tags"),
-    },
+    title: "Get Expenses Tool",
+    description: "Get expenses by year and tag",
+    inputSchema: {},
     outputSchema: {
       transactions: z
         .array(
           z.object({
-            date: z.string().describe("Date the transaction occurred"),
-            description: z
+            year: z.string().describe("Year the transaction happened"),
+            amount: z.string().describe("How much money was spent"),
+            tag: z
               .string()
               .describe(
-                "Details about the transaction, usually the merchant name"
-              ),
-            amount: z.string().describe("How much money was transacted"),
-            type: z
-              .enum(["credit", "debit"])
-              .describe(
-                "Whether money flowed into (credit) or out of (debit) the account"
-              ),
-            source: z
-              .string()
-              .describe("Identifies the account at the financial institution"),
-            tags: z
-              .array(z.string())
-              .optional()
-              .describe(
-                "Manual categorization tags (transactions tagged as 'transfer' can be ignored)"
+                "Manual categorization tag (transactions tagged as 'transfer' can be ignored)"
               ),
           })
         )
-        .describe("Array of matching transactions"),
+        .describe("Array of expense amounts by year and tag"),
     },
     annotations: {
       idempotentHint: true,
     },
   },
-  async ({
-    fromDate,
-    toDate,
-    description,
-    fromAmount,
-    toAmount,
-    hasTags,
-    withoutTags,
-    noTags,
-  }) => {
+  async () => {
     try {
-      const t = await GetTransactions({
-        fromDate,
-        toDate,
-        description,
-        fromAmount,
-        toAmount,
-        hasTags,
-        withoutTags,
-        noTags,
-      });
+      const t = await GetTransactions();
       return {
         content: [
           {
