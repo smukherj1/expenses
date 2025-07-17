@@ -5,6 +5,7 @@ import {
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { GetTransactions } from "./transactions.js";
+import logger from "./logger.js";
 
 const server = new McpServer({ name: "demo-server", version: "1.0.0" });
 
@@ -35,7 +36,11 @@ server.registerTool(
   },
   async () => {
     try {
+      logger.info("Got get-expenses request.");
       const t = await GetTransactions();
+      logger.info(
+        `Returning ${t.transactions.length} transactions for get-expenses.`
+      );
       return {
         content: [
           {
@@ -46,6 +51,7 @@ server.registerTool(
         structuredContent: t,
       };
     } catch (error) {
+      logger.error(`get-expenses error: ${error}`);
       return {
         isError: true,
         content: [

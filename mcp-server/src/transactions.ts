@@ -1,6 +1,7 @@
 import { db } from "./db.js";
 import { and, gte, lte, ilike, SQL, sql } from "drizzle-orm";
 import { transactions } from "./schema.js";
+import logger from "./logger.js";
 
 // Define the interface for a transaction record
 type Transaction = {
@@ -44,10 +45,14 @@ export async function GetTransactions(): Promise<{
         sql`unnest(${transactions.tags})`
       )
       .orderBy(sql`EXTRACT(YEAR FROM ${transactions.date}) DESC`);
+    logger.info(`Running SQL: ${query.toSQL().sql}`);
+    logger.info(`SQL variables: ${query.toSQL().params}`);
     return {
       transactions: await query,
     };
   } catch (error) {
-    throw new Error("Failed to retrieve transactions from the database.");
+    throw new Error(
+      `Failed to retrieve transactions from the database: ${error}`
+    );
   }
 }
