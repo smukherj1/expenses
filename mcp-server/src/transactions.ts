@@ -1,5 +1,5 @@
 import { db } from "./db.js";
-import { and, gte, lte, ilike, SQL, sql } from "drizzle-orm";
+import { and, gte, lte, SQL, sql } from "drizzle-orm";
 import { transactions } from "./schema.js";
 import logger from "./logger.js";
 
@@ -10,11 +10,9 @@ type Transaction = {
   amount: string;
 };
 
-function dateAsYYYYMMDD(date: Date): string {
-  const year = date.getFullYear();
-  const month = (date.getMonth() + 1).toString().padStart(2, "0"); // Months are 0-indexed
-  const day = date.getDate().toString().padStart(2, "0");
-  return `${year}-${month}-${day}`;
+interface QueryParams {
+  fromYear?: number;
+  toYear?: number;
 }
 
 function asSQLArray(tags: string[]): SQL {
@@ -23,13 +21,22 @@ function asSQLArray(tags: string[]): SQL {
   return sql`ARRAY[${joinedSqlTags}]::text[]`;
 }
 
-export async function GetTransactions(): Promise<{
+export async function GetTransactions({
+  fromYear,
+  toYear,
+}: QueryParams): Promise<{
   transactions: Transaction[];
 }> {
   const conditions: SQL[] = [
     lte(transactions.amountCents, 0),
     sql`NOT (${transactions.tags} && ${asSQLArray(["transfer"])})`,
   ];
+  if (fromYear) {
+    conditions.push(gte(transactions.date, `${fromYear}-01-01`));
+  }
+  if (toYear) {
+    conditions.push(lte(transactions.date, `${toYear}-12-31`));
+  }
 
   try {
     const query = db

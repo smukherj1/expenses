@@ -14,7 +14,16 @@ server.registerTool(
   {
     title: "Get Expenses Tool",
     description: "Get expenses by year and tag",
-    inputSchema: {},
+    inputSchema: {
+      fromYear: z
+        .number()
+        .optional()
+        .describe("When specified, returns expenses >= fromYear."),
+      toYear: z
+        .number()
+        .optional()
+        .describe("When specified, returns expenses <= endYear."),
+    },
     outputSchema: {
       transactions: z
         .array(
@@ -34,10 +43,12 @@ server.registerTool(
       idempotentHint: true,
     },
   },
-  async () => {
+  async ({ fromYear, toYear }) => {
     try {
-      logger.info("Got get-expenses request.");
-      const t = await GetTransactions();
+      logger.info(
+        `Got get-expenses request fromYear=${fromYear} toYear=${toYear}.`
+      );
+      const t = await GetTransactions({ fromYear, toYear });
       logger.info(
         `Returning ${t.transactions.length} transactions for get-expenses.`
       );
